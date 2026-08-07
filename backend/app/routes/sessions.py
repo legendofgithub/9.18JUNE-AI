@@ -126,14 +126,6 @@ async def follow_up(session_id: str, body: FollowUpRequest, request: Request):
     return EventSourceResponse(event_generator())
 
 
-# ---- 截图追问 ----
-
-@router.post("/sessions/{session_id}/screenshot")
-async def screenshot_follow_up(session_id: str, body: FollowUpRequest, request: Request):
-    """截图追问 —— 复用追问端点"""
-    return await follow_up(session_id, body, request)
-
-
 # ---- 文件上传（简化版） ----
 
 @router.post("/sessions/{session_id}/files")

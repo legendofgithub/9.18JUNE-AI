@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Message, FloatWindow, ContextMenuState, FileItem, Session, ModelConfig } from '../types';
+import type { Message, FloatWindow, ContextMenuState, FileItem, Session, ModelConfig, FollowUpSettings } from '../types';
 import { sseService } from '../services/sseService';
+import { DEFAULT_FOLLOW_UP_SETTINGS, temperatureValue } from '../types';
 
 const API_BASE = 'http://localhost:8000/api';
 
@@ -59,13 +60,6 @@ interface JuneStore {
     level: number;
     position: { x: number; y: number };
   }) => string;
-  openScreenshotFollowUp: (params: {
-    screenshotBase64: string;
-    sourceMessageId: string;
-    parentThreadId: string;
-    level: number;
-    position: { x: number; y: number };
-  }) => string;
   closeFloatWindow: (threadId: string, closeChildren?: boolean) => void;
   updateFloatWindowPosition: (threadId: string, position: { x: number; y: number }) => void;
   updateFloatWindowSize: (threadId: string, size: { width: number; height: number }) => void;
@@ -73,27 +67,25 @@ interface JuneStore {
   restoreFloatWindow: (threadId: string) => void;
   bringToFront: (threadId: string) => void;
   sendFollowUp: (threadId: string, query: string) => Promise<void>;
+  /** 更新追问窗设置 */
+  updateFloatWindowSettings: (threadId: string, settings: Partial<FollowUpSettings>) => void;
 
   // === 右键菜单 ===
   contextMenu: ContextMenuState | null;
   showContextMenu: (menu: ContextMenuState) => void;
   hideContextMenu: () => void;
-
-  // === 截图模式 ===
-  isScreenshotMode: boolean;
-  enterScreenshotMode: () => void;
-  exitScreenshotMode: () => void;
 }
 
 const DEFAULT_MODEL: ModelConfig = {
-  name: 'deepseek-chat',
+  name: 'deepseek-v4-pro',
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
 };
 
 const useJuneStore = create<JuneStore>((set, get) => ({
   // === 连接状态 ===
-  tokenValid: false,
+  // 如果有已保存的 Token 就乐观认为连接有效（实际通信时 SSE 服务直接读 localStorage）
+  tokenValid: !!localStorage.getItem('june_api_token'),
   setTokenValid: (valid: boolean) => set({ tokenValid: valid }),
 
   // === 会话 ===
@@ -290,35 +282,7 @@ const useJuneStore = create<JuneStore>((set, get) => ({
       size: { width: 420, height: 360 },
       isMinimized: false,
       zIndex,
-    };
-
-    set(state => ({
-      floatWindows: [...state.floatWindows, win],
-    }));
-
-    return threadId;
-  },
-
-  openScreenshotFollowUp: (params) => {
-    const state = get();
-    const threadId = `screenshot_${params.parentThreadId}_L${params.level}_${generateId()}`;
-    const zIndex = (state as any)._zIndexCounter || 1000;
-    (state as any)._zIndexCounter = zIndex + 1;
-
-    const win: FloatWindow = {
-      threadId,
-      parentThreadId: params.parentThreadId,
-      level: params.level,
-      type: 'screenshot',
-      source: {
-        screenshotBase64: params.screenshotBase64,
-        sourceMessageId: params.sourceMessageId,
-      },
-      messages: [],
-      position: params.position,
-      size: { width: 420, height: 400 },
-      isMinimized: false,
-      zIndex,
+      settings: { ...DEFAULT_FOLLOW_UP_SETTINGS },
     };
 
     set(state => ({
@@ -412,10 +376,11 @@ const useJuneStore = create<JuneStore>((set, get) => ({
       threadId,
     };
 
+    // 设置 isStreaming: true，供 FloatWindow 判断是否流式渲染中
     set(state => ({
       floatWindows: state.floatWindows.map(w =>
         w.threadId === threadId
-          ? { ...w, messages: [...w.messages, userMsg, aiMsg] }
+          ? { ...w, messages: [...w.messages, userMsg, aiMsg], isStreaming: true }
           : w
       ),
     }));
@@ -433,6 +398,7 @@ const useJuneStore = create<JuneStore>((set, get) => ({
 
     // SSE 追问
     try {
+      const settings = win.settings ?? DEFAULT_FOLLOW_UP_SETTINGS;
       await sseService.sendFollowUp(
           {
             session_id: state.currentSessionId ?? 'default',
@@ -442,7 +408,6 @@ const useJuneStore = create<JuneStore>((set, get) => ({
             source: {
               type: win.type,
               selected_text: win.source.selectedText,
-              screenshot_base64: win.source.screenshotBase64,
               source_message_id: win.source.sourceMessageId,
               source_message_role: 'assistant' as const,
             },
@@ -451,6 +416,8 @@ const useJuneStore = create<JuneStore>((set, get) => ({
               main_thread_messages: state.mainMessages.slice(-20),
               parent_thread_messages: parentMsgs,
             },
+            temperature: temperatureValue(settings.temperature),
+            verbosity: settings.verbosity,
           },
           (delta: string) => {
             set(state => ({
@@ -461,7 +428,7 @@ const useJuneStore = create<JuneStore>((set, get) => ({
                 if (last && last.role === 'assistant') {
                   msgs[msgs.length - 1] = { ...last, content: last.content + delta };
                 }
-                return { ...w, messages: msgs };
+                return { ...w, messages: msgs, isStreaming: true };
               }),
             }));
           }
@@ -476,21 +443,35 @@ const useJuneStore = create<JuneStore>((set, get) => ({
             if (last && last.role === 'assistant') {
               msgs[msgs.length - 1] = { ...last, content: `[请求失败] ${e?.message ?? String(e)}` };
             }
-            return { ...w, messages: msgs };
+            return { ...w, messages: msgs, isStreaming: false };
           }),
         }));
+        return;
       }
-  },
+
+      // 流式结束，关闭 streaming 状态
+      set(state => ({
+        floatWindows: state.floatWindows.map(w =>
+          w.threadId === threadId ? { ...w, isStreaming: false } : w
+        ),
+      }));
+    },
 
   // === 右键菜单 ===
   contextMenu: null,
   showContextMenu: (menu) => set({ contextMenu: menu }),
   hideContextMenu: () => set({ contextMenu: null }),
 
-  // === 截图模式 ===
-  isScreenshotMode: false,
-  enterScreenshotMode: () => set({ isScreenshotMode: true }),
-  exitScreenshotMode: () => set({ isScreenshotMode: false }),
+  /** 更新追问窗设置（温度/详细程度） */
+  updateFloatWindowSettings: (threadId, settings) => {
+    set(state => ({
+      floatWindows: state.floatWindows.map(w =>
+        w.threadId === threadId
+          ? { ...w, settings: { ...(w.settings ?? DEFAULT_FOLLOW_UP_SETTINGS), ...settings } }
+          : w
+      ),
+    }));
+  },
 }));
 
 // 辅助函数

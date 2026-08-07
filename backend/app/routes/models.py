@@ -17,8 +17,8 @@ class ModelConfigRequest(BaseModel):
 async def list_models():
     """获取可用模型列表"""
     return success([
-        {"id": "deepseek-chat", "name": "DeepSeek Chat (V3)", "provider": "deepseek"},
-        {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner (R1)", "provider": "deepseek"},
+        {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "provider": "deepseek", "vision": True},
+        {"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "provider": "deepseek", "vision": True},
     ])
 
 

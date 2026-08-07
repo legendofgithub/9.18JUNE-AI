@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # ---- DeepSeek API ----
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
-    DEEPSEEK_DEFAULT_MODEL: str = "deepseek-chat"
+    DEEPSEEK_DEFAULT_MODEL: str = "deepseek-v4-pro"
 
     # ---- 安全 ----
     JUNE_API_TOKEN: str = ""  # API 鉴权 token，为空时自动生成（development）或强制要求（production）

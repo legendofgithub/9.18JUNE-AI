@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Minus, GripHorizontal, Send } from 'lucide-react';
+import { X, Minus, GripHorizontal, Send, Settings } from 'lucide-react';
 import type { FloatWindow as FloatWindowType } from '../../types';
 import FloatManager from '../../utils/floatManager';
 import useJuneStore from '../../stores/useJuneStore';
 import ErrorBoundary from '../ErrorBoundary';
+import MarkdownRenderer from '../ui/MarkdownRenderer';
+import type { FollowUpSettings } from '../../types';
 
 interface FloatWindowProps {
   window: FloatWindowType;
@@ -13,10 +15,12 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
   const [input, setInput] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number }>({ startX: 0, startY: 0, origX: 0, origY: 0 });
   const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number }>({ startX: 0, startY: 0, origW: 0, origH: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
 
   const updateFloatWindowPosition = useJuneStore(s => s.updateFloatWindowPosition);
   const updateFloatWindowSize = useJuneStore(s => s.updateFloatWindowSize);
@@ -27,8 +31,21 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
   const sendFollowUp = useJuneStore(s => s.sendFollowUp);
   const showContextMenu = useJuneStore(s => s.showContextMenu);
   const openTextFollowUp = useJuneStore(s => s.openTextFollowUp);
+  const updateFloatWindowSettings = useJuneStore(s => s.updateFloatWindowSettings);
 
   const colors = FloatManager.getLevelColors(win.level);
+
+  // 点击外部关闭设置面板
+  useEffect(() => {
+    if (!showSettings) return;
+    const handler = (e: MouseEvent) => {
+      if (settingsPanelRef.current && !settingsPanelRef.current.contains(e.target as Node)) {
+        setShowSettings(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSettings]);
 
   // 滚动到底部
   useEffect(() => {
@@ -149,7 +166,7 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
           L{win.level}
         </span>
         <span className="text-xs text-gray-600 truncate max-w-[120px]">
-          {win.source.selectedText?.slice(0, 20) ?? '截图追问'}
+          {win.source.selectedText?.slice(0, 20) ?? '追问'}
         </span>
       </div>
     );
@@ -158,7 +175,7 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
   return (
     <div
       data-float-window
-      className={`fixed rounded-xl shadow-2xl border flex flex-col z-50 bg-white ${
+      className={`fixed rounded-xl shadow-2xl border flex flex-col z-50 bg-[#0d1520] ${
         isDragging ? 'cursor-grabbing' : ''
       } ${isDragging || isResizing ? 'select-none' : ''}`}
       style={{
@@ -192,15 +209,37 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
         </span>
 
         {/* 追问源预览 */}
-        <span className="text-xs text-gray-600 truncate flex-1">
+        <span className="text-xs text-[#c8d6e5] truncate flex-1">
           {win.type === 'text' ? (
             <>📌 "{win.source.selectedText?.slice(0, 30)}{(win.source.selectedText?.length ?? 0) > 30 ? '...' : ''}"</>
           ) : (
-            <>📸 截图追问</>
+            <>📸 追问</>
           )}
         </span>
 
         {/* 操作按钮 */}
+        <div className="relative" ref={settingsPanelRef}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); }}
+            className={`p-0.5 rounded transition-colors ${showSettings ? 'bg-black/15' : 'hover:bg-black/10'}`}
+            title="追问设置"
+          >
+            <Settings size={14} className="text-gray-500" />
+          </button>
+
+          {/* 设置面板 */}
+          {showSettings && (
+            <div
+              className="absolute right-0 top-full mt-1 bg-[#111827] rounded-lg shadow-xl border border-[#1e2d3d] p-3 w-52 z-[9999]"
+              onClick={e => e.stopPropagation()}
+            >
+              <SettingsPanel
+                settings={win.settings ?? { verbosity: 'detailed', temperature: 'medium' }}
+                onChange={(s) => updateFloatWindowSettings(win.threadId, s)}
+              />
+            </div>
+          )}
+        </div>
         <button
           onClick={() => minimizeFloatWindow(win.threadId)}
           className="p-0.5 hover:bg-black/10 rounded transition-colors"
@@ -230,7 +269,7 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
         onContextMenu={handleContextMenu}
       >
         {win.messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-400 text-xs">
+          <div className="flex items-center justify-center h-full text-[#3d4d5d] text-xs">
             在下方输入框继续追问...
           </div>
         ) : (
@@ -240,13 +279,20 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
                 className={`inline-block select-text rounded-lg px-3 py-1.5 text-xs max-w-[90%] ${
                   msg.role === 'user'
                     ? 'bg-blue-500 text-white'
-                    : 'bg-white border border-gray-200 text-gray-700'
+                    : 'bg-[#111827] border border-[#1e2d3d] text-[#c8d6e5]'
                 }`}
               >
                 {msg.content ? (
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  msg.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  ) : (
+                    <MarkdownRenderer
+                      content={msg.content}
+                      isStreaming={win.isStreaming && msg === win.messages[win.messages.length - 1]}
+                    />
+                  )
                 ) : (
-                  <span className="text-gray-400 animate-pulse">...</span>
+                  <span className="text-[#3d4d5d] animate-pulse">...</span>
                 )}
               </div>
             </div>
@@ -270,7 +316,7 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
               }
             }}
             placeholder="继续追问..."
-            className="flex-1 bg-gray-50 rounded-lg px-3 py-1.5 text-xs outline-none border border-gray-200 focus:border-blue-300 focus:ring-1 focus:ring-blue-100"
+            className="flex-1 bg-[#0a0e17] rounded-lg px-3 py-1.5 text-xs outline-none border border-[#1e2d3d] focus:border-[#00e5ff]/40 focus:ring-1 focus:ring-[#00e5ff]/20 text-[#c8d6e5] placeholder:text-[#3d4d5d]"
           />
           <button
             onClick={handleSend}
@@ -278,7 +324,7 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
             className={`p-1.5 rounded-lg transition-colors ${
               input.trim()
                 ? 'text-white hover:opacity-90'
-                : 'text-gray-300 cursor-not-allowed'
+                : 'text-[#3d4d5d] cursor-not-allowed'
             }`}
             style={{ backgroundColor: input.trim() ? colors.border : undefined }}
           >
@@ -296,6 +342,67 @@ export default function FloatWindow({ window: win }: FloatWindowProps) {
           borderBottomRightRadius: '0.75rem',
         }}
       />
+    </div>
+  );
+}
+
+/** 设置面板内容组件 */
+function SettingsPanel({
+  settings,
+  onChange,
+}: {
+  settings: FollowUpSettings;
+  onChange: (s: Partial<FollowUpSettings>) => void;
+}) {
+  return (
+    <div className="space-y-3 text-xs">
+      {/* 回复长度 */}
+      <div>
+        <div className="text-[#3d4d5d] mb-1.5 font-medium">回复长度</div>
+        <div className="flex gap-1">
+          {(['detailed', 'concise'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => onChange({ verbosity: v })}
+              className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
+                settings.verbosity === v
+                  ? 'bg-[#00e5ff] text-[#0a0e17]'
+                  : 'bg-[#1a2332] text-[#c8d6e5] hover:bg-[#1e2d3d]'
+              }`}
+            >
+              {v === 'detailed' ? '详细' : '简略'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 温度 */}
+      <div>
+        <div className="text-gray-500 mb-1.5 font-medium">模型温度</div>
+        <div className="flex gap-1">
+          {([
+            { key: 'low' as const, label: '低', desc: '0.2' },
+            { key: 'medium' as const, label: '中', desc: '0.7' },
+            { key: 'high' as const, label: '高', desc: '1.2' },
+          ]).map(t => (
+            <button
+              key={t.key}
+              onClick={() => onChange({ temperature: t.key })}
+              className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
+                settings.temperature === t.key
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-[#1a2332] text-[#c8d6e5] hover:bg-[#1e2d3d]'
+              }`}
+              title={`温度 ${t.desc}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-gray-400 mt-1 text-[10px]">
+          低=精确稳定 · 中=均衡 · 高=创意发散
+        </div>
+      </div>
     </div>
   );
 }

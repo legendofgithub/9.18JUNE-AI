@@ -6,7 +6,7 @@ class DeepSeekService:
     """DeepSeek API 服务 —— 流式对话"""
 
     BASE_URL = "https://api.deepseek.com/v1"
-    DEFAULT_MODEL = "deepseek-chat"
+    DEFAULT_MODEL = "deepseek-v4-pro"
     _api_key: str | None = None
 
     def get_api_key(self) -> str:
@@ -21,6 +21,7 @@ class DeepSeekService:
         messages: List[Dict],
         api_key: str = "",
         model: str = DEFAULT_MODEL,
+        temperature: float = 0.7,
     ) -> AsyncGenerator[str, None]:
         """流式对话 —— 生成 delta 文本片段"""
         import httpx
@@ -41,19 +42,17 @@ class DeepSeekService:
             "Accept": "text/event-stream",
         }
 
-        # 格式化消息
+        # 格式化消息 —— content 支持字符串或数组（OpenAI 多模态格式）
         formatted_messages = []
         for msg in messages:
-            formatted_messages.append({
-                "role": msg.get("role", "user"),
-                "content": msg.get("content", ""),
-            })
+            entry = {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+            formatted_messages.append(entry)
 
         payload = {
             "model": model,
             "messages": formatted_messages,
             "stream": True,
-            "temperature": 0.7,
+            "temperature": temperature,
             "max_tokens": 4096,
         }
 

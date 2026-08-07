@@ -1,1 +1,158 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+/* highlight.js 主题 */
+@import "highlight.js/styles/atom-one-dark.css";
+
+/* ===== June AI 科幻主题全局样式 ===== */
+
+:root {
+  --june-bg: #0a0e17;
+  --june-surface: #111827;
+  --june-surface-hover: #1a2332;
+  --june-border: #1e2d3d;
+  --june-border-glow: rgba(0, 229, 255, 0.2);
+  --june-cyan: #00e5ff;
+  --june-cyan-dim: rgba(0, 229, 255, 0.12);
+  --june-cyan-glow: rgba(0, 229, 255, 0.45);
+  --june-text: #c8d6e5;
+  --june-text-dim: #6b7c93;
+  --june-text-bright: #e8ecf1;
+  --june-accent: #00e5ff;
+  --june-danger: #ff5c72;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--june-bg);
+  color: var(--june-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ===== 全局网格背景（叠加在粒子之下） ===== */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+}
+
+/* ===== Header 底部扫描线 ===== */
+header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--june-accent) 20%,
+    var(--june-accent) 80%,
+    transparent 100%
+  );
+  opacity: 0.4;
+  animation: scan-line 4s ease-in-out infinite;
+}
+
+@keyframes scan-line {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.6; }
+}
+
+/* ===== 全局滚动条 ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--june-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2e3d4d; }
+
+/* ===== 科幻霓虹发光工具类 ===== */
+.neon-border {
+  border-color: var(--june-border-glow);
+  box-shadow: 0 0 8px var(--june-cyan-dim), inset 0 0 4px var(--june-cyan-dim);
+}
+
+.neon-text {
+  color: var(--june-cyan);
+  text-shadow: 0 0 6px var(--june-cyan-glow), 0 0 12px var(--june-cyan-dim);
+}
+
+.neon-glow-hover:hover {
+  box-shadow: 0 0 16px var(--june-cyan-glow), 0 0 4px var(--june-accent);
+  border-color: var(--june-accent);
+}
+
+/* 玻璃面板 */
+.glass {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--june-border);
+}
+
+.glass-hover:hover {
+  background: rgba(26, 35, 50, 0.8);
+  border-color: var(--june-border-glow);
+}
+
+/* ===== Markdown 渲染器暗色覆盖 ===== */
+.prose {
+  max-width: none;
+  color: var(--june-text);
+}
+
+.prose h1 { font-size: 1.5rem; font-weight: 700; color: var(--june-text-bright); margin-top: 1.5em; margin-bottom: 0.5em; }
+.prose h2 { font-size: 1.25rem; font-weight: 600; color: var(--june-text-bright); margin-top: 1.25em; margin-bottom: 0.5em; }
+.prose h3 { font-size: 1.125rem; font-weight: 600; color: var(--june-text); margin-top: 1em; margin-bottom: 0.25em; }
+.prose p { margin-bottom: 0.75em; line-height: 1.75; }
+.prose ul, .prose ol { margin-bottom: 0.75em; padding-left: 1.5em; }
+.prose li { margin-bottom: 0.25em; }
+.prose ul > li { list-style-type: disc; }
+.prose ol > li { list-style-type: decimal; }
+.prose a { color: var(--june-accent); text-decoration: underline; }
+.prose a:hover { color: #00f0ff; }
+.prose strong { font-weight: 600; color: var(--june-text-bright); }
+.prose em { font-style: italic; }
+.prose hr { border: none; border-top: 1px solid var(--june-border); margin: 1.5em 0; }
+.prose blockquote {
+  border-left: 3px solid var(--june-accent);
+  padding-left: 1em;
+  color: var(--june-text-dim);
+  background: rgba(0, 229, 255, 0.04);
+  border-radius: 0 0.5rem 0.5rem 0;
+  margin: 1em 0;
+  padding: 0.5em 1em;
+}
+
+/* 表格 */
+.prose tbody tr:nth-child(even) { background-color: rgba(255, 255, 255, 0.03); }
+.prose th { color: var(--june-text-bright); border-bottom: 1px solid var(--june-border); }
+.prose td { border-bottom: 1px solid var(--june-border); }
+.prose input[type="checkbox"] { accent-color: var(--june-accent); }
+
+/* KaTeX */
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.25em 0; }
+
+/* 行内代码 */
+:not(pre) > code {
+  background-color: rgba(0, 229, 255, 0.08);
+  color: var(--june-accent);
+  border-radius: 0.25rem;
+  padding: 0.125em 0.375em;
+  font-size: 0.8125em;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+/* highlight.js 代码块容器 */
+.hljs {
+  background: transparent !important;
+  padding: 0.75em 1em;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+

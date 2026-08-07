@@ -2,13 +2,16 @@ import { useRef, useCallback } from 'react';
 import type { Message } from '../../types';
 import FloatManager from '../../utils/floatManager';
 import useJuneStore from '../../stores/useJuneStore';
+import MarkdownRenderer from '../ui/MarkdownRenderer';
 
 interface MessageBubbleProps {
   message: Message;
   onTextSelect?: (text: string, messageId: string) => void;
+  /** 该消息是否正在流式接收中（仅对最后一条 assistant 消息为 true） */
+  isStreaming?: boolean;
 }
 
-export default function MessageBubble({ message, onTextSelect }: MessageBubbleProps) {
+export default function MessageBubble({ message, onTextSelect, isStreaming = false }: MessageBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const floatWindows = useJuneStore(s => s.floatWindows);
   const openTextFollowUp = useJuneStore(s => s.openTextFollowUp);
@@ -38,10 +41,10 @@ export default function MessageBubble({ message, onTextSelect }: MessageBubblePr
       <div className="max-w-[80%]">
         {!isUser && (
           <div className="flex items-center gap-2 mb-1 ml-1">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-white text-xs font-bold shadow-[0_0_8px_rgba(0,229,255,0.3)]">
               J
             </div>
-            <span className="text-xs text-gray-500">June AI</span>
+            <span className="text-xs text-[#6b7c93]">June AI</span>
           </div>
         )}
         <div
@@ -49,14 +52,21 @@ export default function MessageBubble({ message, onTextSelect }: MessageBubblePr
           onContextMenu={handleContextMenu}
           className={`select-text rounded-xl px-4 py-3 text-sm leading-relaxed ${
             isUser
-              ? 'bg-blue-500 text-white rounded-br-md'
-              : 'bg-white border border-gray-200 text-gray-800 rounded-bl-md shadow-sm'
+              ? 'bg-[#00e5ff]/15 text-[#e8ecf1] rounded-br-md border border-[#00e5ff]/20'
+              : 'bg-[#111827] border border-[#1e2d3d] text-[#c8d6e5] rounded-bl-md shadow-lg'
           }`}
         >
           {message.content ? (
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            isUser ? (
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            ) : (
+              <MarkdownRenderer
+                content={message.content}
+                isStreaming={isStreaming}
+              />
+            )
           ) : (
-            <div className="flex items-center gap-1 text-gray-400">
+            <div className="flex items-center gap-1 text-[#6b7c93]">
               <span className="animate-pulse">●</span>
               <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>●</span>
               <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>●</span>
@@ -65,9 +75,9 @@ export default function MessageBubble({ message, onTextSelect }: MessageBubblePr
 
           {/* 资料库引用 */}
           {message.references && message.references.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-gray-100">
+            <div className="mt-2 pt-2 border-t border-[#1e2d3d]">
               {message.references.map((ref, i) => (
-                <div key={i} className="text-xs text-gray-400 flex items-center gap-1">
+                <div key={i} className="text-xs text-[#6b7c93] flex items-center gap-1">
                   <span>📎</span>
                   <span>来自: {ref.fileName}{ref.page ? ` (第${ref.page}页)` : ''}</span>
                 </div>
@@ -84,9 +94,9 @@ export default function MessageBubble({ message, onTextSelect }: MessageBubblePr
                 key={chain.threadId}
                 onClick={() => handleFollowUpClick(chain.threadId)}
                 className={`text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 w-fit hover:opacity-80 transition-opacity ${
-                  chain.level === 1 ? 'bg-blue-50 text-blue-600' :
-                  chain.level === 2 ? 'bg-purple-50 text-purple-600' :
-                  'bg-orange-50 text-orange-600'
+                  chain.level === 1 ? 'bg-[#00e5ff]/10 text-[#00e5ff] border border-[#00e5ff]/20' :
+                  chain.level === 2 ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                  'bg-orange-500/10 text-orange-400 border border-orange-500/20'
                 }`}
               >
                 <span className="font-bold">L{chain.level}</span>

@@ -74,9 +74,9 @@ ai-study-tool/
 │   ├── package.json
 │   └── vite.config.ts
 │
+├── setup.bat                       # 首次安装（依赖 + 虚拟环境）
+├── run.bat                         # 日常启动（watchdog + vite）
 ├── watchdog.py                     # 进程守护（health 探测 + 自动重启）
-├── start.bat                       # Windows 一键启动（自动检查依赖 + 守护）
-├── start.ps1                       # PowerShell 启动脚本
 └── README.md
 ```
 
@@ -141,57 +141,49 @@ Interface (routes/)  →  Application (services/)  →  Domain (repositories/)
 - Node.js 18+
 - DeepSeek API Key（在 [platform.deepseek.com](https://platform.deepseek.com) 获取）
 
-### 一键启动（Windows）
+### Windows 用户
 
-```bash
-# 双击根目录下的 start.bat
-# 或命令行运行：
-start.bat
+**前置条件：** Python 3.10-3.12（推荐）、Node.js 18+ 已安装并在 PATH 中。
+
+**首次运行（仅一次）：**
+```
+双击 setup.bat
 ```
 
-启动器会自动：
-1. 检查 `.env` 文件，不存在则从 `.env.example` 复制
-2. 检查 Python 依赖并自动安装
-3. 用 watchdog 守护后端（端口 8000，崩溃自动重启）
-4. 启动前端 Vite 开发服务器（端口 5173）
-5. 等待服务就绪后输出访问地址
+自动完成：创建虚拟环境 → 安装 Python 依赖 → 安装 Node.js 依赖。大约需要 2-5 分钟（看网速）。
 
-### 手动启动
+> **常见安装问题：** 如果报 `pydantic-core` 编译错误（`Rust/Cargo not installed`），
+> 说明 pip 没找到预编译的 wheel 包。请升级 pip 后重试：
+> ```
+> .venv\Scripts\python.exe -m pip install --upgrade pip
+> .venv\Scripts\pip.exe install -r backend\requirements.txt
+> ```
 
-**1. 配置后端**
-
-```bash
-cd backend
-
-# 创建虚拟环境
-python -m venv .venv
-source .venv/bin/activate   # Linux/Mac
-# .venv\Scripts\activate    # Windows
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 配置环境变量（复制模板后编辑）
-cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY 和 JUNE_API_TOKEN
+**日常启动：**
+```
+双击 run.bat
 ```
 
-**2. 安装前端依赖**
+自动完成：启动 watchdog 守护后端（端口 8000）→ 启动前端 Vite（端口 5173）。后端崩溃自动重启，无需手动管理。
+
+**可选配置 DeepSeek API Key：** 编辑 `backend\.env`，将 `DEEPSEEK_API_KEY=sk-your-deepseek-api-key-here` 替换为你的真实 Key。不配也能用（mock 模式）。
+
+### Mac / Linux 用户
 
 ```bash
-cd frontend
-npm install
-```
+# 首次：安装依赖
+cd backend && python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
 
-**3. 分别启动**
+# 启动后端
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 
-```bash
-# 终端 1：后端
-cd backend && uvicorn app.main:app --reload --port 8000
-
-# 终端 2：前端
+# 启动前端
 cd frontend && npm run dev
 ```
+
+Mac/Linux 暂无 watchdog，建议用 `while true; do ...; done` 或 systemd 实现守护。
 
 ### 首次配置 Token
 

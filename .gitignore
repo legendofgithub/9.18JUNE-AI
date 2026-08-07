@@ -1,54 +1,54 @@
+# ——— 依赖/构建产物 ———
 node_modules/
 .venv/
 __pycache__/
 *.pyc
 dist/
-.env
-*.log
-.DS_Store
-Thumbs.db
-github_key
-github_key.pub
-.workbuddy/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-Desktop.ini
-
-# backend log
-backend/backend.log
-
-# 数据库文件（不提交，每个环境独立生成）
-*.db
-*.db-journal
-*.db-wal
-
-# 环境变量模板（只提交 .example，不提交真实 .env）
+# ——— 环境变量 ———
 .env
 !.env.example
 !.env.development
 
-# E2E test db leftovers
+# ——— 数据库 ———
+*.db
+*.db-journal
+*.db-wal
 *.db-shm
 
-# Workbuddy
-.workbuddy/
+# ——— 日志 ———
+*.log
+backend/backend.log
 
-# Backend test artifacts
-backend/test_write.txt
+# ——— IDE / OS ———
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
 
-# 废弃脚本（已有新版替代）
-github_setup.bat
+# ——— 密钥 ———
+github_key
+github_key.pub
+
+# ——— 废弃文件（已被 setup.bat / run.bat 替代）———
 start.ps1
+start.bat
 start-backend.bat
 stop-backend.bat
+github_setup.bat
 git_push_to_github.ps1
 
-# 部署配置（仅本地，不提交）
+# ——— 部署配置（仅本地）———
 nginx.conf
 june-api.service
+
+# ——— 一次性工具 ———
+prompt_for_push.md
+
+# ——— 系统临时文件 ———
+.workbuddy/
+.fuse_hidden*
+backend/test_write.txt

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Send, Paperclip, Image } from 'lucide-react';
+import { Send, Paperclip } from 'lucide-react';
 import useJuneStore from '../../stores/useJuneStore';
 
 export default function InputBar() {
@@ -10,8 +10,6 @@ export default function InputBar() {
   const sendMessage = useJuneStore(s => s.sendMessage);
   const isStreaming = useJuneStore(s => s.isStreaming);
   const uploadFile = useJuneStore(s => s.uploadFile);
-  const enterScreenshotMode = useJuneStore(s => s.enterScreenshotMode);
-  const isScreenshotMode = useJuneStore(s => s.isScreenshotMode);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || isStreaming) return;
@@ -47,13 +45,13 @@ export default function InputBar() {
   }, []);
 
   return (
-    <div className="border-t border-gray-200 bg-white px-4 py-3">
+    <div className="border-t border-[#1e2d3d] bg-[#0d1520]/80 backdrop-blur-md px-4 py-3">
       <div className="max-w-3xl mx-auto">
-        <div className="flex items-end gap-2 bg-gray-50 rounded-2xl border border-gray-200 px-4 py-2 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+        <div className="flex items-end gap-2 bg-[#111827] rounded-2xl border border-[#1e2d3d] px-4 py-2 focus-within:border-[#00e5ff]/40 focus-within:ring-2 focus-within:ring-[#00e5ff]/10 transition-all">
           {/* 文件上传按钮 */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 text-[#3d4d5d] hover:text-[#00e5ff] hover:bg-[#1a2332] rounded-lg transition-colors"
             title="上传文件"
           >
             <Paperclip size={18} />
@@ -66,19 +64,6 @@ export default function InputBar() {
             accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif"
           />
 
-          {/* 截图追问按钮 */}
-          <button
-            onClick={enterScreenshotMode}
-            className={`p-2 rounded-lg transition-colors ${
-              isScreenshotMode
-                ? 'text-blue-500 bg-blue-50'
-                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-            }`}
-            title="截图追问"
-          >
-            <Image size={18} />
-          </button>
-
           {/* 输入框 */}
           <textarea
             ref={textareaRef}
@@ -88,7 +73,7 @@ export default function InputBar() {
             onKeyDown={handleKeyDown}
             placeholder="输入问题，或选中任意文本右键追问..."
             rows={1}
-            className="flex-1 bg-transparent resize-none outline-none text-sm py-1.5 max-h-[200px] placeholder:text-gray-400"
+            className="flex-1 bg-transparent resize-none outline-none text-sm py-1.5 max-h-[200px] placeholder:text-[#3d4d5d] text-[#c8d6e5]"
             disabled={isStreaming}
           />
 
@@ -98,19 +83,13 @@ export default function InputBar() {
             disabled={!input.trim() || isStreaming}
             className={`p-2 rounded-lg transition-all ${
               input.trim() && !isStreaming
-                ? 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm'
-                : 'text-gray-300 cursor-not-allowed'
+                ? 'bg-[#00e5ff] text-[#0a0e17] hover:bg-[#00f0ff] shadow-[0_0_12px_rgba(0,229,255,0.3)]'
+                : 'text-[#3d4d5d] cursor-not-allowed'
             }`}
           >
             <Send size={18} />
           </button>
         </div>
-
-        {isScreenshotMode && (
-          <div className="mt-2 text-xs text-blue-500 bg-blue-50 rounded-lg px-3 py-1.5 text-center">
-            📸 截图模式已开启 — 点击并拖拽框选追问区域，按 ESC 取消
-          </div>
-        )}
       </div>
     </div>
   );

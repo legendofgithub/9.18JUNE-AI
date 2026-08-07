@@ -49,7 +49,7 @@ export default function ContextMenu() {
   return (
     <div
       ref={menuRef}
-      className="fixed bg-white rounded-xl shadow-2xl border border-gray-200 py-1 z-[9999] animate-in"
+      className="fixed bg-[#111827] rounded-xl shadow-2xl border border-[#1e2d3d] py-1 z-[9999] animate-in"
       style={{ left: x, top: y, minWidth: menuWidth }}
     >
       {contextMenu.items.map((item, i) => (
@@ -62,16 +62,16 @@ export default function ContextMenu() {
           disabled={item.disabled}
           className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors text-left ${
             item.disabled
-              ? 'text-gray-300 cursor-not-allowed'
+              ? 'text-[#3d4d5d] cursor-not-allowed'
               : item.danger
-                ? 'text-red-600 hover:bg-red-50'
-                : 'text-gray-700 hover:bg-gray-50'
+                ? 'text-red-400 hover:bg-red-500/10'
+                : 'text-[#c8d6e5] hover:bg-[#1a2332]'
           }`}
         >
           <span className="text-base">{item.icon}</span>
           <span className="flex-1">{item.label}</span>
           {item.shortcut && (
-            <span className="text-xs text-gray-400">{item.shortcut}</span>
+            <span className="text-xs text-[#3d4d5d]">{item.shortcut}</span>
           )}
         </button>
       ))}

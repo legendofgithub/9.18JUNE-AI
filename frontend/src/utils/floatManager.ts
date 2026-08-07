@@ -97,7 +97,7 @@ class FloatManager {
         chain.push({
           threadId: win.threadId,
           level: win.level,
-          summary: win.source.selectedText?.slice(0, 30) ?? '截图追问',
+          summary: win.source.selectedText?.slice(0, 30) ?? '追问',
         });
       }
     }

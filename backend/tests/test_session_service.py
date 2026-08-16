@@ -32,7 +32,7 @@ class TestSessionService:
         r = svc.ensure_session("s1"); assert r["id"] == "s1"; svc.repo.create.assert_not_called()
     def test_ensure_creates(self, svc):
         svc.repo.find.return_value = None
-        new = MagicMock(); new.id='new'; new.title='N'; new.created_at=2.0
+        new = MagicMock(); new.id='new'; new.title='N'; new.created_at=2.0; new.model='m'
         svc.repo.create.return_value = new; svc.repo.get_messages.return_value = []
         r = svc.ensure_session("?"); assert r["id"] == 'new'; svc.repo.create.assert_called_once()
 
@@ -52,12 +52,15 @@ class TestSessionService:
             session_id="s1", parent_thread_id="m_s1", thread_id="f1", level=2,
             source=SourceInfo(type="text", selected_text="YYY", source_message_id="m1", source_message_role="assistant"),
             query="?", context=ContextInfo(main_thread_messages=[], parent_thread_messages=[]))
+
+        chat_calls = []
         async def gen(**kw):
+            chat_calls.append(kw)
             yield 'X'
         svc.deepseek.chat = gen
         events = [e async for e in svc.stream_follow_up("s1", body)]
         svc.thread_mgr.register.assert_called_once()
-        svc.deepseek.chat.assert_called_once()
-        msgs = svc.deepseek.chat.call_args[1]['messages']
+        assert len(chat_calls) == 1
+        msgs = chat_calls[0]['messages']
         assert 'June AI' in msgs[0]['content']
         assert 'YYY' in msgs[1]['content']

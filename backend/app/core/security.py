@@ -6,7 +6,11 @@ API Token 鉴权中间件 —— Bearer Token 模式。
 - 生产模式下前端通过 localStorage 存储 token，所有 /api/ 请求携带 Authorization: Bearer <token>
 - SSE 请求因 EventSource 不支持自定义 Header，token 通过 URL 参数 ?token=xxx 传递
 """
+import base64
+import hashlib
+import hmac
 import secrets
+import time
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
@@ -14,7 +18,16 @@ from .config import settings
 
 
 # 免鉴权路径前缀
-PUBLIC_PATHS = {"/health", "/", "/docs", "/openapi.json", "/redoc"}
+PUBLIC_PATHS = {
+    "/health",
+    "/",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/products",
+}
 
 
 def _is_public_path(path: str) -> bool:
@@ -34,6 +47,56 @@ def _is_public_path(path: str) -> bool:
 def generate_token() -> str:
     """生成 32 字符的随机 hex token"""
     return secrets.token_hex(32)
+
+
+def _auth_signature(payload: str) -> str:
+    secret = settings.JUNE_AUTH_SECRET or settings.JUNE_API_TOKEN or "june-dev-auth-secret"
+    digest = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+def make_auth_token(owner_id: str, ttl_hours: int | None = None) -> str:
+    expires_at = int(time.time()) + (ttl_hours or settings.JUNE_AUTH_TOKEN_HOURS) * 3600
+    payload = f"v1.{owner_id}.{expires_at}"
+    return f"{payload}.{_auth_signature(payload)}"
+
+
+def verify_auth_token(token: str) -> str | None:
+    """验证用户登录 token，返回 owner_id。"""
+    try:
+        version, owner_id, expires_at, signature = token.split(".", 3)
+        if version != "v1":
+            return None
+        payload = f"{version}.{owner_id}.{expires_at}"
+        if not hmac.compare_digest(signature, _auth_signature(payload)):
+            return None
+        if int(expires_at) < int(time.time()):
+            return None
+        return owner_id
+    except (ValueError, TypeError):
+        return None
+
+
+def _byok_cipher():
+    """Create the server-side cipher for user-owned model API keys."""
+    from cryptography.fernet import Fernet
+
+    secret = settings.JUNE_AUTH_SECRET or settings.JUNE_API_TOKEN or "june-dev-byok-secret"
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+    return Fernet(key)
+
+
+def encrypt_api_key(api_key: str) -> str:
+    return _byok_cipher().encrypt(api_key.encode()).decode()
+
+
+def decrypt_api_key(encrypted_key: str) -> str:
+    if not encrypted_key:
+        return ""
+    try:
+        return _byok_cipher().decrypt(encrypted_key.encode()).decode()
+    except Exception:
+        return ""
 
 
 def ensure_token() -> str:
@@ -94,18 +157,27 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
+        # CORS preflight never carries credentials; let CORSMiddleware answer it.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # 公开路径免鉴权
         if _is_public_path(path):
             return await call_next(request)
 
         # 获取当前有效 token
-        valid_token = settings.JUNE_API_TOKEN or settings.JUNE_API_TOKEN
+        # ensure_token() 启动时已将 token 写入 settings.JUNE_API_TOKEN
+        valid_token = settings.JUNE_API_TOKEN
 
         # 方式一：Authorization Header
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
             if token and valid_token and token == valid_token:
+                return await call_next(request)
+            owner_id = verify_auth_token(token)
+            if token and owner_id:
+                request.state.owner_id = owner_id
                 return await call_next(request)
             # 开发模式无 token 配置时放行
             if not valid_token and not settings.is_production:
@@ -115,6 +187,10 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         query_token = request.query_params.get("token", "")
         if query_token:
             if valid_token and query_token == valid_token:
+                return await call_next(request)
+            query_owner = verify_auth_token(query_token)
+            if query_owner:
+                request.state.owner_id = query_owner
                 return await call_next(request)
             if not valid_token and not settings.is_production:
                 return await call_next(request)

@@ -57,7 +57,11 @@ echo.
 echo [2] Starting frontend (port 5173)...
 start "June-Frontend" cmd /c "cd /d "%~dp0frontend" && npx vite --host 0.0.0.0 --port 5173"
 
-timeout /t 4 /nobreak >nul
+timeout /t 3 /nobreak >nul
+
+start "" "http://localhost:5173"
+
+timeout /t 2 /nobreak >nul
 
 echo.
 echo ============================================

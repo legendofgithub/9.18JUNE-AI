@@ -23,13 +23,36 @@ class Settings(BaseSettings):
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 8000
 
-    # ---- DeepSeek API ----
+    # ---- DeepSeek API（保留兼容）----
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_DEFAULT_MODEL: str = "deepseek-v4-pro"
 
+    # ---- 通用 LLM 配置（兼容任何 OpenAI 格式 API 服务商）----
+    # LLM_* 优先于 DEEPSEEK_*；若两者都未设则用 DeepSeek 默认值
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""
+    LLM_DEFAULT_MODEL: str = ""
+
+    # ---- CORS ----
+    JUNE_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
     # ---- 安全 ----
     JUNE_API_TOKEN: str = ""  # API 鉴权 token，为空时自动生成（development）或强制要求（production）
+    JUNE_AUTH_SECRET: str = ""
+    JUNE_AUTH_TOKEN_HOURS: int = 24 * 30
+
+    # ---- 初始管理员 ----
+    # 密码只放在本地 .env 或部署环境变量中，源码和示例文件不保存明文。
+    JUNE_ADMIN_IDENTITY: str = "tony"
+    JUNE_ADMIN_EMAIL: str = "tony@june.local"
+    JUNE_ADMIN_DISPLAY_NAME: str = "Tony"
+    JUNE_ADMIN_PASSWORD: str = ""
+
+    # ---- 支付 ----
+    # sandbox 用于本机联调；production 必须接入签名回调，避免客户端伪造支付
+    JUNE_PAYMENT_PROVIDER: str = "sandbox"
+    JUNE_PAYMENT_CALLBACK_SECRET: str = ""
 
     # ---- SSE 配置 ----
     SSE_HEARTBEAT_INTERVAL: int = 15
@@ -52,12 +75,38 @@ class Settings(BaseSettings):
         backend_dir = Path(__file__).resolve().parent.parent.parent
         return str(backend_dir / "june.db")
 
+    @property
+    def llm_api_key(self) -> str:
+        """解析 LLM API Key（LLM_* 优先，回退 DEEPSEEK_*）"""
+        return self.LLM_API_KEY or self.DEEPSEEK_API_KEY
+
+    @property
+    def llm_base_url(self) -> str:
+        """解析 LLM Base URL（LLM_* 优先，回退 DEEPSEEK_*）"""
+        return self.LLM_BASE_URL or self.DEEPSEEK_BASE_URL
+
+    @property
+    def llm_default_model(self) -> str:
+        """解析默认模型名（LLM_* 优先，回退 DEEPSEEK_*）"""
+        return self.LLM_DEFAULT_MODEL or self.DEEPSEEK_DEFAULT_MODEL
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """解析 CORS 允许来源列表"""
+        return [o.strip() for o in self.JUNE_CORS_ORIGINS.split(",") if o.strip()]
+
     def validate(self):
         """启动时校验：生产模式强制检查必填项"""
         errors: list[str] = []
         if self.is_production:
-            if not self.DEEPSEEK_API_KEY:
-                errors.append("DEEPSEEK_API_KEY 未设置，生产模式必须提供 API Key")
+            if not self.llm_api_key:
+                errors.append("未设置 API Key（LLM_API_KEY 或 DEEPSEEK_API_KEY），生产模式必须提供")
+            if not self.JUNE_AUTH_SECRET or len(self.JUNE_AUTH_SECRET) < 32:
+                errors.append("JUNE_AUTH_SECRET 未设置或长度不足（至少 32 字符）")
+            if self.JUNE_PAYMENT_PROVIDER == "sandbox":
+                errors.append("生产模式不能使用 sandbox 支付，请配置正式支付通道")
+            if not self.JUNE_PAYMENT_CALLBACK_SECRET:
+                errors.append("JUNE_PAYMENT_CALLBACK_SECRET 未设置，支付回调无法验证")
             if not self.JUNE_API_TOKEN or len(self.JUNE_API_TOKEN) < 16:
                 errors.append("JUNE_API_TOKEN 未设置或长度不足（至少 16 字符），生产模式必须提供安全 Token")
         return errors

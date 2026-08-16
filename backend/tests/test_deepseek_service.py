@@ -1,16 +1,18 @@
 """
-DeepSeekService 单元测试
+DeepSeekService（LLM 服务）单元测试
 """
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 from app.services.deepseek import DeepSeekService
+from app.core.config import settings
 
 
 class TestDeepSeekService:
     def test_env_key(self):
         svc = DeepSeekService(); svc._api_key = None
         with patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'sk-env'}):
-            assert svc.get_api_key() == 'sk-env'
+            with patch.object(settings, 'DEEPSEEK_API_KEY', ''), patch.object(settings, 'LLM_API_KEY', ''):
+                assert svc.get_api_key() == 'sk-env'
 
     def test_memory_over_env(self):
         svc = DeepSeekService(); svc._api_key = 'sk-mem'
@@ -20,86 +22,173 @@ class TestDeepSeekService:
     def test_empty_key(self):
         svc = DeepSeekService(); svc._api_key = None
         with patch.dict('os.environ', {}, clear=True):
-            assert svc.get_api_key() == ''
+            with patch.object(settings, 'DEEPSEEK_API_KEY', ''), patch.object(settings, 'LLM_API_KEY', ''):
+                assert svc.get_api_key() == ''
 
     def test_set_key(self):
         svc = DeepSeekService(); svc.set_api_key('sk-new')
         assert svc._api_key == 'sk-new'
 
+    def test_runtime_model_override(self):
+        svc = DeepSeekService()
+        svc.set_model('glm-4-flash', 'https://open.bigmodel.cn/api/paas/v4')
+        assert svc.DEFAULT_MODEL == 'glm-4-flash'
+        assert svc.BASE_URL == 'https://open.bigmodel.cn/api/paas/v4'
+
     def test_default_model(self):
-        assert DeepSeekService().DEFAULT_MODEL == 'deepseek-chat'
+        assert DeepSeekService().DEFAULT_MODEL == settings.llm_default_model
 
     def test_base_url(self):
-        assert 'api.deepseek.com' in DeepSeekService().BASE_URL
+        assert DeepSeekService().BASE_URL == settings.llm_base_url
 
     @pytest.mark.asyncio
     async def test_mock_reply(self):
         svc = DeepSeekService(); svc._api_key = None
         with patch.dict('os.environ', {}, clear=True):
-            chunks = [c async for c in svc.chat(messages=[{"role":"user","content":"?"}], api_key="")]
-            assert len(''.join(chunks)) > 10
+            with patch.object(settings, 'DEEPSEEK_API_KEY', ''), patch.object(settings, 'LLM_API_KEY', ''):
+                with patch.object(type(settings), 'is_production', new_callable=lambda: property(lambda self: False)):
+                    chunks = [c async for c in svc.chat(messages=[{"role": "user", "content": "?"}], api_key="")]
+                    assert len(''.join(chunks)) > 10
 
     @pytest.mark.asyncio
     async def test_real_api(self):
         svc = DeepSeekService()
-        mock_resp = AsyncMock()
-        mock_resp.status_code = 200
-        async def lines():
-            for l in ['data: {"choices":[{"delta":{"content":"A"}}]}', 'data: {"choices":[{"delta":{"content":"B"}}]}', 'data: [DONE]']:
-                yield l
-        mock_resp.aiter_lines = lines
 
-        mock_client = AsyncMock()
-        async def enter(ctx):
-            return mock_resp
-        mock_client.stream = MagicMock()
-        mock_client.stream.return_value.__aenter__ = enter
-        mock_client.stream.return_value.__aexit__ = AsyncMock()
+        class FakeResponse:
+            status_code = 200
+            async def aiter_lines(self):
+                for l in ['data: {"choices":[{"delta":{"content":"A"}}]}',
+                           'data: {"choices":[{"delta":{"content":"B"}}]}',
+                           'data: [DONE]']:
+                    yield l
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=mock_client):
-            result = ''.join([c async for c in svc.chat(messages=[{"role":"user","content":"?"}], api_key="sk-fake")])
+        class FakeClient:
+            def stream(self, method, url, headers, json):
+                return FakeResponse()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        with patch('httpx.AsyncClient', return_value=FakeClient()):
+            result = ''.join([c async for c in svc.chat(
+                messages=[{"role": "user", "content": "?"}], api_key="sk-fake")])
             assert result == 'AB'
 
     @pytest.mark.asyncio
     async def test_api_error(self):
         svc = DeepSeekService()
-        mock_resp = AsyncMock()
-        mock_resp.status_code = 500
-        mock_resp.aread = AsyncMock(return_value=b'Error')
 
-        mock_client = MagicMock()
-        async def enter(ctx):
-            raise Exception('DeepSeek API error 500: Error')
-        mock_client.stream.side_effect = Exception('DeepSeek API error 500: Error')
+        class FakeResponse:
+            status_code = 500
+            async def aread(self): return b'Error'
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=mock_client):
-            with pytest.raises(Exception, match='DeepSeek'):
-                async for _ in svc.chat(messages=[{"role":"user","content":"?"}], api_key="sk-fake"):
+        class FakeClient:
+            def stream(self, method, url, headers, json):
+                return FakeResponse()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        with patch('httpx.AsyncClient', return_value=FakeClient()):
+            with pytest.raises(Exception, match='LLM API error'):
+                async for _ in svc.chat(messages=[{"role": "user", "content": "?"}], api_key="sk-fake"):
                     pass
 
     @pytest.mark.asyncio
     async def test_msg_format(self):
         svc = DeepSeekService()
-        captured = None
+        captured = {}
 
-        mock_resp = AsyncMock()
-        mock_resp.status_code = 200
-        async def lines():
-            yield 'data: [DONE]'
-        mock_resp.aiter_lines = lines
+        class FakeResponse:
+            status_code = 200
+            async def aiter_lines(self):
+                yield 'data: [DONE]'
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
 
         class FakeClient:
             def stream(self, method, url, headers, json):
-                nonlocal captured
-                captured = json
-                return self
-            async def __aenter__(self): return mock_resp
-            async def __aexit__(*a): pass
+                captured.update(json)
+                return FakeResponse()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
 
         with patch('httpx.AsyncClient', return_value=FakeClient()):
-            async for _ in svc.chat(messages=[{"role":"system","content":"sys"},{"role":"user","content":"q"}], api_key="sk-fake"):
+            async for _ in svc.chat(messages=[{"role": "system", "content": "sys"},
+                                              {"role": "user", "content": "q"}], api_key="sk-fake"):
                 pass
-        assert captured is not None
-        assert captured['model'] == 'deepseek-chat'
-        assert captured['stream'] is True
-        assert len(captured['messages']) == 2
+        assert captured.get('stream') is True
+        assert len(captured.get('messages', [])) == 2
+
+    @pytest.mark.asyncio
+    async def test_payload_uses_runtime_model(self):
+        svc = DeepSeekService()
+        svc.set_model('glm-4-flash')
+        captured = {}
+
+        class FakeResponse:
+            status_code = 200
+            async def aiter_lines(self):
+                yield 'data: [DONE]'
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        class FakeClient:
+            def stream(self, method, url, headers, json):
+                captured.update({'method': method, 'url': url, 'payload': json})
+                return FakeResponse()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        with patch('httpx.AsyncClient', return_value=FakeClient()):
+            async for _ in svc.chat(messages=[{"role": "user", "content": "?"}], api_key='sk-fake'):
+                pass
+        assert captured['payload']['model'] == 'glm-4-flash'
+
+    @pytest.mark.asyncio
+    async def test_connection_success(self):
+        svc = DeepSeekService()
+        svc.set_model('glm-5.2', 'https://open.bigmodel.cn/api/paas/v4')
+
+        class FakeResponse:
+            status_code = 200
+            text = '{}'
+            def json(self):
+                return {'model': 'glm-5.2'}
+
+        class FakeClient:
+            async def post(self, url, headers, json):
+                assert url == 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+                assert json['model'] == 'glm-5.2'
+                assert json['stream'] is False
+                return FakeResponse()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        with patch('httpx.AsyncClient', return_value=FakeClient()):
+            result = await svc.test_connection()
+        assert result['ok'] is True
+        assert result['model'] == 'glm-5.2'
+
+    @pytest.mark.asyncio
+    async def test_connection_http_error(self):
+        svc = DeepSeekService()
+
+        class FakeResponse:
+            status_code = 401
+            text = 'unauthorized'
+
+        class FakeClient:
+            async def post(self, url, headers, json):
+                return FakeResponse()
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        with patch('httpx.AsyncClient', return_value=FakeClient()):
+            result = await svc.test_connection()
+        assert result['ok'] is False
+        assert '访问密钥未被 AI 工具接受' in result['error']
+        assert result['http_status'] == 401
+        assert 'sk-' not in result['error']

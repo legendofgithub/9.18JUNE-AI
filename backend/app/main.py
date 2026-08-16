@@ -23,10 +23,14 @@ from .core.exceptions import JuneException
 from .core.security import TokenAuthMiddleware, ensure_token
 from .models.database import init_db, get_session
 from .repositories import SessionRepository
+from .repositories.commerce_repo import CommerceRepository
 from .services import SessionService
+from .services.auth_service import AuthService
+from .services.commerce_service import CommerceService
+from .services.mvp_service import MvpService
 from .services.deepseek import DeepSeekService
 from .thread_manager import thread_manager
-from .routes import sessions, models
+from .routes import auth, commerce, sessions, models
 
 
 @asynccontextmanager
@@ -39,7 +43,7 @@ async def lifespan(app: FastAPI):
     errors = settings.validate()
     if errors:
         for err in errors:
-            print(f"[June] ⚠️  {err}")
+            print(f"[June] WARNING  {err}")
         if settings.is_production:
             raise RuntimeError("生产模式配置校验失败，请检查 .env 文件")
 
@@ -53,10 +57,22 @@ async def lifespan(app: FastAPI):
     # 装配依赖链
     db_session = get_session(settings.db_path)
     session_repo = SessionRepository(db_session)
+    commerce_repo = CommerceRepository(db_session)
+    commerce_repo.seed_products()
+    if settings.JUNE_ADMIN_PASSWORD:
+        commerce_repo.seed_admin(
+            settings.JUNE_ADMIN_IDENTITY,
+            settings.JUNE_ADMIN_EMAIL,
+            settings.JUNE_ADMIN_PASSWORD,
+            settings.JUNE_ADMIN_DISPLAY_NAME,
+        )
     deepseek_service = DeepSeekService()
     app.state.session_service = SessionService(session_repo, deepseek_service, thread_manager)
     app.state.deepseek_service = deepseek_service
     app.state.db_session = db_session
+    app.state.auth_service = AuthService(commerce_repo)
+    app.state.commerce_service = CommerceService(commerce_repo, deepseek_service)
+    app.state.mvp_service = MvpService(commerce_repo, session_repo, deepseek_service, thread_manager)
 
     # 启动 ThreadManager
     await thread_manager.start_cleanup(interval=settings.THREAD_CLEANUP_INTERVAL)
@@ -72,6 +88,7 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, "db_session"):
         app.state.db_session.close()
 
+    # 等待 SSE 流自然断开，避免客户端收到 RST
     await asyncio.sleep(5)
 
 
@@ -79,17 +96,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="June AI API",
-    description="June AI 伴学系统后端 API",
+    description="Vibe Coding 变现训练官：用自然语言做最小商业 MVP",
     version="2.0.0",
     lifespan=lifespan,
 )
 
 # ── 中间件 ──
 
-# CORS
+# CORS（来源从配置读取，不再硬编码通配符）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,6 +152,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 app.include_router(sessions.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(commerce.router, prefix="/api")
 
 
 # ── 公开端点 ──
@@ -180,13 +199,15 @@ async def system_status(request: Request):
     except Exception:
         pass
 
-    deepseek_configured = bool(settings.DEEPSEEK_API_KEY or request.app.state.deepseek_service.get_api_key())
+    llm_configured = bool(settings.llm_api_key or request.app.state.deepseek_service.get_api_key())
 
     return {
         "version": "2.0.0",
         "env": settings.JUNE_ENV,
         "db": "connected" if db_ok else "error",
-        "deepseek_api_configured": deepseek_configured,
+        "llm_api_configured": llm_configured,
+        "llm_base_url": settings.llm_base_url,
+        "llm_model": settings.llm_default_model,
         "active_threads": thread_manager.active_count(),
     }
 

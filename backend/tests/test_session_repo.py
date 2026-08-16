@@ -3,6 +3,7 @@ SessionRepository 单元测试 —— 使用 /tmp 目录直接建 SQLite
 """
 import pytest
 import os
+import tempfile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app.models.database import Base
@@ -11,7 +12,7 @@ from app.core.exceptions import NotFoundException
 
 @pytest.fixture
 def repo():
-    db_path = os.path.join('/tmp', f'june_test_{os.getpid()}.db')
+    db_path = os.path.join(tempfile.gettempdir(), f'june_test_{os.getpid()}.db')
     engine = create_engine(f'sqlite:///{db_path}', connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = Session(engine)
@@ -66,3 +67,44 @@ class TestSessionRepository:
     def test_add_message_auto_create(self, repo):
         m = repo.add_message("auto-99", "user", "hi")
         assert repo.exists("auto-99")
+
+    def test_upsert_thread_and_state(self, repo):
+        s = repo.create()
+        repo.upsert_thread(s.id, "f1", f"main_{s.id}", 1)
+        repo.upsert_thread_state(
+            s.id,
+            "f1",
+            selected_text="selected",
+            source_message_id="m1",
+            position=(20, 30),
+            size=(400, 320),
+            z_index=1024,
+            settings={"verbosity": "concise"},
+        )
+        states = repo.list_thread_states(s.id)
+        assert len(states) == 1
+        assert states[0]["parentThreadId"] == f"main_{s.id}"
+        assert states[0]["position"] == {"x": 20, "y": 30}
+        assert states[0]["settings"]["verbosity"] == "concise"
+
+    def test_update_thread_ui_and_summary(self, repo):
+        s = repo.create()
+        repo.upsert_thread(s.id, "f1", "main", 1)
+        repo.upsert_thread_state(s.id, "f1")
+        repo.update_thread_ui("f1", position=(1, 2), size=(330, 250), is_minimized=True, z_index=99, settings={"temperature": "low"}, is_closed=True)
+        repo.update_thread_summary("f1", "summary")
+        state = repo.list_thread_states(s.id)[0]
+        assert state["position"] == {"x": 1, "y": 2}
+        assert state["size"] == {"width": 330, "height": 250}
+        assert state["isMinimized"] is True
+        assert state["isClosed"] is True
+        assert state["summary"] == "summary"
+
+    def test_add_message_once_is_idempotent(self, repo):
+        s = repo.create()
+        first = repo.add_message_once("fixed-id", s.id, "user", "q", thread_id="f1")
+        second = repo.add_message_once("fixed-id", s.id, "user", "q-retry", thread_id="f1")
+        assert first.id == second.id
+        messages = repo.get_all_messages(s.id, "f1")
+        assert len(messages) == 1
+        assert messages[0]["content"] == "q"

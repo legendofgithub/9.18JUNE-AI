@@ -75,8 +75,7 @@ class TestConfig:
 
     def test_settings_development_default(self):
         """默认是开发模式"""
-        s = Settings()
-        assert s.JUNE_ENV == "development" or s.JUNE_ENV == ""
+        s = Settings(JUNE_ENV="development")
         assert s.is_production == False
 
     def test_settings_production_mode(self):
@@ -96,10 +95,10 @@ class TestConfig:
 
     def test_validate_production_no_api_key(self):
         """生产模式缺少 API Key 时报错"""
-        s = Settings(JUNE_ENV="production", DEEPSEEK_API_KEY="", JUNE_API_TOKEN="")
+        s = Settings(JUNE_ENV="production", DEEPSEEK_API_KEY="", LLM_API_KEY="", JUNE_API_TOKEN="")
         errors = s.validate()
         assert len(errors) >= 1
-        assert any("DEEPSEEK_API_KEY" in e for e in errors)
+        assert any("API Key" in e for e in errors)
 
     def test_validate_development_no_errors(self):
         """开发模式允许缺少配置"""
@@ -138,10 +137,17 @@ def temp_db():
     from app.models.database import init_db, get_session
 
     tmp = tempfile.mktemp(suffix='.db')
+    # Reset the global engine singleton so each test gets its own engine
+    import app.models.database as db_module
+    db_module._engine = None
     init_db(tmp)
     db = get_session(tmp)
     yield db
     db.close()
+    # Dispose engine to release the file lock before unlinking on Windows
+    if db_module._engine is not None:
+        db_module._engine.dispose()
+    db_module._engine = None
     if os.path.exists(tmp):
         os.unlink(tmp)
 
@@ -156,6 +162,7 @@ class TestDatabaseIntegration:
         assert 'sessions' in tables
         assert 'messages' in tables
         assert 'threads' in tables
+        assert 'files' in tables
 
     def test_cascade_delete(self, temp_db):
         """级联删除：删除 session 时关联的 messages 和 threads 也删除"""

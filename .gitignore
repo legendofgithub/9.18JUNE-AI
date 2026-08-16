@@ -52,3 +52,6 @@ prompt_for_push.md
 .workbuddy/
 .fuse_hidden*
 backend/test_write.txt
+
+# ---- 上传文件 ----
+backend/uploads/

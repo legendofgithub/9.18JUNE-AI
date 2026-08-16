@@ -16,6 +16,32 @@ export interface Session {
   model: string;
 }
 
+export interface HarnessThreadState {
+  threadId: string;
+  parentThreadId: string;
+  level: number;
+  type: 'text';
+  source: {
+    selectedText?: string;
+    sourceMessageId: string;
+    sourceMessageRole: 'user' | 'assistant';
+  };
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  isMinimized: boolean;
+  zIndex: number;
+  settings?: FollowUpSettings;
+  summary?: string;
+  isClosed: boolean;
+  updatedAt?: number;
+}
+
+export interface HarnessSessionDetail extends Session {
+  messages: Message[];
+  threads: HarnessThreadState[];
+  threadMessages: Record<string, Message[]>;
+}
+
 // ===== 追问设置 =====
 export interface FollowUpSettings {
   /** 回复长度：detailed 详细 / concise 简略 */
@@ -110,6 +136,32 @@ export interface FollowUpRequest {
   temperature?: number;
   /** 回复详细程度 */
   verbosity?: 'detailed' | 'concise';
+  user_message_id?: string;
+  assistant_message_id?: string;
+}
+
+export interface ThreadRegisterRequest {
+  parent_thread_id: string;
+  thread_id: string;
+  level: number;
+  source: {
+    type: 'text';
+    selected_text?: string;
+    source_message_id: string;
+    source_message_role: 'user' | 'assistant';
+  };
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  zIndex: number;
+}
+
+export interface ThreadPatchRequest {
+  position?: { x: number; y: number };
+  size?: { width: number; height: number };
+  is_minimized?: boolean;
+  z_index?: number;
+  settings?: FollowUpSettings;
+  is_closed?: boolean;
 }
 
 export interface ChatRequest {
@@ -136,4 +188,160 @@ export interface ModelConfig {
   name: string;
   apiKey: string;
   baseUrl: string;
+}
+
+export const MODEL_BASE_URLS: Record<string, string> = {
+  'glm-5.2': 'https://open.bigmodel.cn/api/paas/v4',
+  'glm-4-flash': 'https://open.bigmodel.cn/api/paas/v4',
+  'deepseek-chat': 'https://api.deepseek.com/v1',
+  'gpt-4o': 'https://api.openai.com/v1',
+  'moonshot-v1-128k': 'https://api.moonshot.cn/v1',
+  'qwen-plus': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+};
+
+export const AI_TOOL_OPTIONS = [
+  { model: 'glm-5.2', label: '智谱清言 GLM' },
+  { model: 'deepseek-chat', label: 'DeepSeek' },
+  { model: 'gpt-4o', label: 'OpenAI' },
+  { model: 'moonshot-v1-128k', label: 'Kimi' },
+  { model: 'qwen-plus', label: '通义千问' },
+];
+
+// ===== 讲解模式 =====
+export type ExplainMode = 'simple' | 'standard' | 'advanced';
+
+// ===== 引导状态 =====
+export interface OnboardingState {
+  hasSeenWelcome: boolean;
+  hasSeenFollowUpHint: boolean;
+}
+
+// ===== Vibe Coding 变现训练官商业类型 =====
+export interface CommerceUser {
+  id: string;
+  email: string;
+  account: string;
+  displayName: string;
+  isAdmin: boolean;
+  token: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  description: string;
+  priceCents: number;
+  priceYuan: number;
+  pathCount: number;
+}
+
+export interface Order {
+  id: string;
+  productId: string;
+  productName: string;
+  amountCents: number;
+  pathCount: number;
+  status: 'pending' | 'paid' | 'cancelled';
+  provider: string;
+  providerOrderId: string;
+  providerTransactionId?: string | null;
+  createdAt: number;
+  paidAt?: number | null;
+  sandbox?: boolean;
+}
+
+export interface CoachStatus {
+  paid: boolean;
+  skillInstalled: boolean;
+  apiKeyReady: boolean;
+  modelName: string;
+  activeRunId: string | null;
+}
+
+export interface InstalledSkill {
+  id: string;
+  skillKey: string;
+  name: string;
+  version: string;
+  modelName: string;
+  baseUrl: string;
+  apiKeyReady: boolean;
+  installedAt: number;
+}
+
+export interface MvpRunSummary {
+  id: string;
+  title: string;
+  vertical: string;
+  status: 'active' | 'completed';
+  currentStepOrder: number;
+  totalSteps: number;
+  createdAt: number;
+  completedAt?: number | null;
+}
+
+export interface MvpRunStep {
+  id: string;
+  key: string;
+  order: number;
+  title: string;
+  objective?: string;
+  requiredArtifact: string;
+  isCompleted: boolean;
+  artifactTitle?: string;
+}
+
+export interface CurrentMvpStep extends MvpRunStep {
+  objective: string;
+  tool: string;
+  instructions: string;
+  template: string;
+  artifactContent: string;
+}
+
+export interface MvpRunDetail extends MvpRunSummary {
+  blocker: string;
+  nextAction: string;
+  steps: MvpRunStep[];
+  currentStep: CurrentMvpStep;
+  messages: Message[];
+  threads: HarnessThreadState[];
+  threadMessages: Record<string, Message[]>;
+}
+
+export interface InstallResult {
+  skill: InstalledSkill;
+  run: MvpRunSummary | null;
+}
+
+export interface CoachStartResult {
+  status: CoachStatus;
+  skill: InstalledSkill;
+  run: MvpRunSummary | null;
+}
+
+export interface ModelEntryConfig {
+  id: string;
+  modelId: string;
+  displayName: string;
+  contextTokens: number;
+  maxOutputTokens: number;
+  reasoning: 'low' | 'medium' | 'high';
+}
+
+export interface ModelServiceConfig {
+  id: string;
+  displayName: string;
+  vendor: string;
+  baseUrl: string;
+  protocol: 'openai-compatible' | 'native' | 'custom';
+  apiKeyReady: boolean;
+  version: number;
+  models: ModelEntryConfig[];
+}
+
+export interface FollowUpThreadMeta {
+  parentThreadId: string;
+  level: number;
+  sourceMessageId: string;
 }

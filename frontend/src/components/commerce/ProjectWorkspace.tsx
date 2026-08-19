@@ -157,25 +157,25 @@ function downloadBlob(filename: string, content: string, mime: string) {
 }
 
 function downloadMarkdown(content: string) {
-  downloadBlob(`今日学习成果报告-${todayText()}.md`, content, 'text/markdown;charset=utf-8');
+  downloadBlob(`今日交付成果报告-${todayText()}.md`, content, 'text/markdown;charset=utf-8');
 }
 
 function downloadWord(content: string) {
   const html = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>今日学习成果报告</title></head>
+<head><meta charset="utf-8"><title>今日交付成果报告</title></head>
 <body>
   <div style="display:flex;align-items:center;gap:10px;padding-bottom:14px;margin-bottom:18px;border-bottom:2px solid #0f766e;">
     <span style="width:36px;height:36px;border-radius:10px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;">J</span>
     <div>
       <div style="font-size:20px;font-weight:800;color:#0f766e;">June AI</div>
-      <div style="font-size:12px;color:#6b7280;">AI 变现训练官 · 学习成果报告</div>
+      <div style="font-size:12px;color:#6b7280;">超级个体训练师 · 交付成果报告</div>
     </div>
   </div>
   ${markdownToHtml(content)}
 </body>
 </html>`;
-  downloadBlob(`今日学习成果报告-${todayText()}.doc`, html, 'application/msword;charset=utf-8');
+  downloadBlob(`今日交付成果报告-${todayText()}.doc`, html, 'application/msword;charset=utf-8');
 }
 
 function downloadPdf(content: string) {
@@ -186,7 +186,7 @@ function downloadPdf(content: string) {
   }
   const html = `<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>今日学习成果报告</title><style>
+<head><meta charset="utf-8"><title>今日交付成果报告</title><style>
   body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 820px; margin: 40px auto; padding: 0 24px; line-height: 1.75; color: #1f2937; }
   h1, h2, h3 { color: #0f766e; }
   pre, code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
@@ -196,7 +196,7 @@ function downloadPdf(content: string) {
     <span style="width:36px;height:36px;border-radius:10px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;">J</span>
     <div>
       <div style="font-size:20px;font-weight:800;color:#0f766e;">June AI</div>
-      <div style="font-size:12px;color:#6b7280;">AI 变现训练官 · 学习成果报告</div>
+      <div style="font-size:12px;color:#6b7280;">超级个体训练师 · 交付成果报告</div>
     </div>
   </div>
   ${markdownToHtml(content)}
@@ -245,7 +245,7 @@ function buildDailyReport(
   const lines: string[] = [];
   lines.push(`# 🚀 June AI`);
   lines.push('');
-  lines.push(`## 今日学习成果报告`);
+  lines.push(`## 今日交付成果报告`);
   lines.push('');
   lines.push(`**日期**：${date}`);
   lines.push('');
@@ -580,7 +580,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
     const content = buildDailyReport(currentRun, activeSession, temperature, permission);
     const report: ReportDoc = {
       id: uid('report'),
-      title: `June AI · 今日学习成果报告 ${todayText()}`,
+      title: `June AI · 今日交付成果报告 ${todayText()}`,
       content,
       createdAt: Date.now(),
     };
@@ -1150,7 +1150,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                           <span className="doc-logo-mark">J</span>
                           <div>
                             <strong>June AI</strong>
-                            <small>AI 变现训练官 · 学习成果报告</small>
+                            <small>超级个体训练师 · 交付成果报告</small>
                           </div>
                         </div>
                         <div className="doc-content">

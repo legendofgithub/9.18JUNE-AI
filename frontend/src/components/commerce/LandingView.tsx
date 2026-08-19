@@ -19,7 +19,7 @@ const copy = {
     subtitle: 'June AI 面向零基础商业者，用自然语言推进 10 个关键动作：付费人群、可售卖结果、第一版 MVP、报价获客、首次交付与复盘。',
     secondaryCta: '查看套餐',
     productTitle: '产品介绍',
-    productLead: '一个训练官，一条商业闭环路径',
+    productLead: '一位超级个体训练师，一条商业闭环路径',
     features: [
       { title: '商业目标先行', body: '从愿意付费的人群和痛点开始，而不是从技术栈开始。' },
       { title: '自然语言造产品', body: '用“用户看到什么、点什么、得到什么”描述 MVP，由 AI 完成实现。' },
@@ -28,7 +28,7 @@ const copy = {
     workflowTitle: '10 节点商业 MVP 路径',
     workflow: ['人群与痛点', '可售卖结果', '商业需求简报', '产品形态', '第一版 MVP', '迭代试用', '报价收款', '获客名单', '首次交付', '复盘迭代'],
     pricingTitle: '购买解锁',
-    pricingNote: '一次性解锁超级个体训练师人格；产品承诺确定性交付物，不承诺收入。',
+    pricingNote: '一次性解锁超级个体训练师；产品承诺确定性交付物，不承诺收入。',
     purchase: '购买产品',
     studio: '模型服务',
     accountTitle: '账户状态',
@@ -38,7 +38,7 @@ const copy = {
     merchantOrder: '商户单号',
     transaction: '沙箱流水号',
     confirm: '确认到账',
-    callback: '支付完成后即可启动超级个体训练师人格。',
+    callback: '支付完成后即可启动超级个体训练师。',
     aboutTitle: '关于我们',
     about: 'OPC 团队能在这条路上受益，靠的不是赌对了什么，而是顺势借到了一股时代大势所趋——AI 正在把创造与变现的能力交回给每一个普通人。我们只是把超级个体的能力沉淀成可复制的训练流程，被这股大势托着往前走；愿意参与、愿意行动的个体，也自然会被它一并托起。',
     stats: [

@@ -88,7 +88,7 @@ export default function SiteHeader({ language, onLanguageChange, route }: SiteHe
           <span>
             <span className="site-brand-name">June AI</span>
             <span className="site-brand-caption">
-              {language === 'zh' ? 'AI 变现训练官' : 'AI Monetization Coach'}
+              {language === 'zh' ? '超级个体训练师' : 'Super-Solo Coach'}
             </span>
           </span>
         </a>

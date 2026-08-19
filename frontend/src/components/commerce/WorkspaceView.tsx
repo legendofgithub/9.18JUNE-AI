@@ -425,7 +425,7 @@ export default function WorkspaceView({ language }: { language: SiteLanguage }) 
                     value={chatInput}
                     onChange={event => setChatInput(event.target.value)}
                     disabled={isCompleted || isStreaming}
-                    placeholder={isCompleted ? '路径已归档' : '描述你想让 AI 做出的结果，或回答训练官的问题'}
+                    placeholder={isCompleted ? '路径已归档' : '描述你想让 AI 做出的结果，或回答超级个体训练师的问题'}
                   />
                   <button
                     className="coach-primary-button w-full mt-2"

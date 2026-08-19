@@ -216,7 +216,7 @@ export interface OnboardingState {
   hasSeenFollowUpHint: boolean;
 }
 
-// ===== Vibe Coding 变现训练官商业类型 =====
+// ===== Vibe Coding 超级个体训练师商业类型 =====
 export interface CommerceUser {
   id: string;
   email: string;

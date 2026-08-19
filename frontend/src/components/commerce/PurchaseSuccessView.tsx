@@ -6,7 +6,7 @@ const copy = {
   zh: {
     title: '购买成功',
     subtitle: '超级个体训练师已解锁',
-    desc: '你已完成一次性解锁，可进入模型服务启动训练师人格，开始推进 10 个商业节点的交付。',
+    desc: '你已完成一次性解锁，可进入模型服务启动超级个体训练师，开始推进 10 个商业节点的交付。',
     enter: '进入模型服务',
     notPaid: '支付尚未完成',
     notPaidDesc: '没有检测到已支付订单，请先完成支付。',
@@ -16,7 +16,7 @@ const copy = {
   en: {
     title: 'Purchase successful',
     subtitle: 'Super-Solo Coach unlocked',
-    desc: 'You have completed the one-time unlock. Enter Model Studio to launch the coach persona and start the 10 commercial steps.',
+    desc: 'You have completed the one-time unlock. Enter Model Studio to launch the Super-Solo Coach and start the 10 commercial steps.',
     enter: 'Open Model Studio',
     notPaid: 'Payment not completed',
     notPaidDesc: 'No paid order detected. Please complete payment first.',

@@ -1,6 +1,5 @@
-"""会话生命周期、主对话编排与无限追问 harness 上下文组装。"""
+"""会话生命周期、主对话编排与无限追问链上下文组装。"""
 
-import re
 import uuid
 from datetime import datetime
 
@@ -64,70 +63,6 @@ class SessionService:
             "threads": [self._normalize_thread_state(s, session_id) for s in states],
             "threadMessages": thread_messages,
         }
-
-    def build_learning_report(self, session_id: str) -> str:
-        """生成可交给家长/老师的学习报告，把追问树转化为学习证据。"""
-        session = self.repo.get(session_id)
-        states = [self._normalize_thread_state(s, session_id) for s in self.repo.list_thread_states(session_id)]
-        main_messages = self.repo.get_all_messages(session_id, "main")
-        thread_messages = {
-            state["threadId"]: self.repo.get_all_messages(session_id, state["threadId"])
-            for state in states
-        }
-
-        followup_count = sum(len(messages) for messages in thread_messages.values())
-        max_depth = max((state["level"] for state in states), default=0)
-        selected_texts = [state.get("source", {}).get("selectedText", "") for state in states]
-        hot_topics = self._top_terms(selected_texts)
-        generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-        lines = [
-            f"# June AI 学习报告",
-            "",
-            f"- 会话：{session.title}",
-            f"- 生成时间：{generated_at}",
-            f"- 模型：{session.model}",
-            "",
-            "## 学习概览",
-            "",
-            f"- 主对话消息：{len(main_messages)} 条",
-            f"- 追问线程：{len(states)} 个",
-            f"- 追问消息：{followup_count} 条",
-            f"- 最深追问：L{max_depth}",
-            "",
-        ]
-        if hot_topics:
-            lines.extend(["## 高频卡点", ""])
-            lines.extend(f"- {term}：出现 {count} 次" for term, count in hot_topics)
-            lines.append("")
-
-        lines.extend(["## 追问轨迹", ""])
-        if not states:
-            lines.append("本次会话还没有形成追问轨迹。")
-        for state in sorted(states, key=lambda item: (item["level"], item["updatedAt"] or 0)):
-            path = self._thread_path(state["threadId"], states)
-            selected = self._clip(state.get("source", {}).get("selectedText", ""), 120)
-            messages = thread_messages.get(state["threadId"], [])
-            first_question = next((m for m in messages if m["role"] == "user"), None)
-            last_answer = next((m for m in reversed(messages) if m["role"] == "assistant"), None)
-            lines.extend([
-                f"### {path}",
-                "",
-                f"- 关注内容：{selected or '未记录'}",
-                f"- 首次追问：{self._clip(first_question['content'], 180) if first_question else '未发送'}",
-                f"- 最新结论：{self._clip(self._strip_think(last_answer['content']), 260) if last_answer else '等待回答'}",
-                "",
-            ])
-
-        lines.extend([
-            "## 使用建议",
-            "",
-            "- 高频卡点适合整理进错题本，并安排同类题目复练。",
-            "- 深层追问说明学习者愿意持续探究，可鼓励其把追问路径讲给他人。",
-            "- 若同一概念反复出现，应回到教材对应章节做系统复习。",
-            "",
-        ])
-        return "\n".join(lines)
 
     def list_sessions(self, limit: int = 50) -> list[dict]:
         return [self._session_to_dict(s) for s in self.repo.list_all(limit)]
@@ -383,31 +318,6 @@ class SessionService:
             parent_seen = True
             current_id = state.get("parentThreadId", "main")
         return summaries
-
-    def _thread_path(self, thread_id: str, states: list[dict]) -> str:
-        by_id = {state["threadId"]: state for state in states}
-        levels: list[str] = []
-        current = by_id.get(thread_id)
-        visited: set[str] = set()
-        while current and current["threadId"] not in visited:
-            visited.add(current["threadId"])
-            levels.insert(0, f"L{current['level']}")
-            parent_id = current.get("parentThreadId", "main")
-            current = by_id.get(parent_id) if parent_id != "main" else None
-        return " / ".join(levels) or "L1"
-
-    @staticmethod
-    def _strip_think(content: str) -> str:
-        return re.sub(r"<think>.*?</think>", "", content or "", flags=re.DOTALL).strip()
-
-    @staticmethod
-    def _top_terms(texts: list[str], limit: int = 5) -> list[tuple[str, int]]:
-        counter: dict[str, int] = {}
-        for text in texts:
-            term = (text or "").strip()
-            if term:
-                counter[term] = counter.get(term, 0) + 1
-        return sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:limit]
 
     def _refresh_thread_summary(self, session_id: str, thread_id: str) -> None:
         state = self.repo.find_thread_state(thread_id)

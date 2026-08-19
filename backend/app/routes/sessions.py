@@ -10,7 +10,7 @@ import json
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile, File, Response
+from fastapi import APIRouter, Request, UploadFile, File
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 from ..core.response import success, not_found
@@ -83,22 +83,6 @@ async def delete_session(session_id: str, request: Request):
     if not deleted:
         return not_found(f"会话 {session_id} 不存在")
     return success(None, "会话已删除")
-
-
-@router.get("/sessions/{session_id}/report")
-async def get_learning_report(session_id: str, request: Request):
-    """导出 Markdown 学习报告，用于家长/老师查看学习证据"""
-    svc = _get_service(request)
-    try:
-        markdown = svc.build_learning_report(session_id)
-    except NotFoundException as e:
-        return not_found(e.message)
-    filename = f"june-learning-report-{session_id}.md"
-    return Response(
-        content=markdown,
-        media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 # ---- 主对话 SSE ----

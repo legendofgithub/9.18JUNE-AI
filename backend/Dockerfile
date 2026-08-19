@@ -27,4 +27,4 @@ ENV JUNE_ENV=production
 ENV JUNE_DB_PATH=/data/june.db
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--workers", "2", "--timeout-keep-alive", "600"]
+     "--workers", "1", "--timeout-keep-alive", "600"]

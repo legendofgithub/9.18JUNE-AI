@@ -29,7 +29,7 @@ const copy = {
     workflow: ['人群与痛点', '可售卖结果', '商业需求简报', '产品形态', '第一版 MVP', '迭代试用', '报价收款', '获客名单', '首次交付', '复盘迭代'],
     pricingTitle: '购买解锁',
     pricingNote: '一次性解锁超级个体训练师人格；产品承诺确定性交付物，不承诺收入。',
-    purchase: '购买',
+    purchase: '购买产品',
     studio: '模型服务',
     accountTitle: '账户状态',
     unlockStatus: '训练师权限',
@@ -40,7 +40,7 @@ const copy = {
     confirm: '确认到账',
     callback: '支付完成后即可启动超级个体训练师人格。',
     aboutTitle: '关于我们',
-    about: '一个青年创业者的商业项目，致力于提升AI对社会创造的价值，为了实现这个目标，从民间招募并培养一批AI变现专家，让使用者挣钱就是顺手的事。',
+    about: 'OPC 团队能在这条路上受益，靠的不是赌对了什么，而是顺势借到了一股时代大势所趋——AI 正在把创造与变现的能力交回给每一个普通人。我们只是把超级个体的能力沉淀成可复制的训练流程，被这股大势托着往前走；愿意参与、愿意行动的个体，也自然会被它一并托起。',
     stats: [
       { value: '10', label: '必修商业节点' },
       { value: 'BYOK', label: '自带模型密钥' },
@@ -63,7 +63,7 @@ const copy = {
     workflow: ['Buyers & pains', 'Sellable outcome', 'Business brief', 'Product shape', 'First MVP', 'Iteration', 'Pricing', 'Acquisition', 'First delivery', 'Review'],
     pricingTitle: 'Unlock',
     pricingNote: 'One-time unlock for the Super-Solo Coach persona. June sells deterministic deliverables, never income guarantees.',
-    purchase: 'Buy',
+    purchase: 'Buy Product',
     studio: 'Model Studio',
     accountTitle: 'Account',
     unlockStatus: 'Coach access',
@@ -74,7 +74,7 @@ const copy = {
     confirm: 'Confirm payment',
     callback: 'Start the Super-Solo Coach after payment succeeds.',
     aboutTitle: 'About Us',
-    about: 'A young founder’s commercial project, dedicated to increasing the value AI creates for society. To achieve this, we recruit and train AI monetization specialists from the community, making earning a natural by-product.',
+    about: 'The OPC team’s gains here came not from betting right, but from riding an inevitable tide of the era — AI is returning the power to create and earn to ordinary people. We simply codified super-solo capability into a repeatable training flow, carried forward by that tide; those who join and act get lifted by it too.',
     stats: [
       { value: '10', label: 'required steps' },
       { value: 'BYOK', label: 'bring your own model key' },
@@ -180,7 +180,6 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
   const lastOrder = useCommerceStore(s => s.lastOrder);
   const isBusy = useCommerceStore(s => s.isBusy);
   const error = useCommerceStore(s => s.error);
-  const createOrder = useCommerceStore(s => s.createOrder);
   const confirmOrder = useCommerceStore(s => s.confirmOrder);
   const clearError = useCommerceStore(s => s.clearError);
   const text = copy[language];
@@ -304,14 +303,10 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
                 <span>{language === 'zh' ? '一次性解锁' : 'One-time unlock'}</span>
                 <strong>{product.priceYuan}</strong>
                 <p>{product.description}</p>
-                <button
-                  className="site-primary-link"
-                  disabled={!user || isBusy}
-                  onClick={() => void createOrder(product.id)}
-                >
-                  {isBusy ? <Loader2 size={14} className="animate-spin" /> : <CreditCard size={14} />}
+                <a className="site-primary-link" href="#/product">
+                  <CreditCard size={14} />
                   {text.purchase}
-                </button>
+                </a>
               </article>
             ))}
             <article className="home-price-card home-community-card" aria-label={language === 'zh' ? '社群入口' : 'Community entry'}>

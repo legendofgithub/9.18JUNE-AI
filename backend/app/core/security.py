@@ -165,34 +165,20 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
         if _is_public_path(path):
             return await call_next(request)
 
-        # 获取当前有效 token
-        # ensure_token() 启动时已将 token 写入 settings.JUNE_API_TOKEN
+        # ensure_token() 启动时已将 token 写入 settings.JUNE_API_TOKEN。
         valid_token = settings.JUNE_API_TOKEN
 
         # 方式一：Authorization Header
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
-            if token and valid_token and token == valid_token:
+            if token and valid_token and hmac.compare_digest(token, valid_token):
+                request.state.auth_scheme = "admin"
                 return await call_next(request)
             owner_id = verify_auth_token(token)
             if token and owner_id:
                 request.state.owner_id = owner_id
-                return await call_next(request)
-            # 开发模式无 token 配置时放行
-            if not valid_token and not settings.is_production:
-                return await call_next(request)
-
-        # 方式二：URL 参数（SSE 兼容）
-        query_token = request.query_params.get("token", "")
-        if query_token:
-            if valid_token and query_token == valid_token:
-                return await call_next(request)
-            query_owner = verify_auth_token(query_token)
-            if query_owner:
-                request.state.owner_id = query_owner
-                return await call_next(request)
-            if not valid_token and not settings.is_production:
+                request.state.auth_scheme = "user"
                 return await call_next(request)
 
         # 鉴权失败

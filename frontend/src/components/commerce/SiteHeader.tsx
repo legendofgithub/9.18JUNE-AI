@@ -3,7 +3,7 @@ import { Globe, LogIn, LogOut, Route, ShieldCheck, UserRound } from 'lucide-reac
 import useCommerceStore from '../../stores/useCommerceStore';
 
 export type SiteLanguage = 'zh' | 'en';
-export type SiteRoute = 'home' | 'studio';
+export type SiteRoute = 'home' | 'product' | 'payment' | 'success' | 'studio';
 
 interface SiteHeaderProps {
   language: SiteLanguage;
@@ -16,6 +16,7 @@ const copy = {
     products: '产品介绍',
     about: '关于我们',
     studio: '模型服务',
+    promo: 'OPC 宣传页',
     home: '产品首页',
     login: '登录',
     logout: '退出',
@@ -31,6 +32,7 @@ const copy = {
     products: 'Products',
     about: 'About Us',
     studio: 'Model Studio',
+    promo: 'OPC Promo',
     home: 'Product Home',
     login: 'Sign in',
     logout: 'Sign out',
@@ -92,7 +94,12 @@ export default function SiteHeader({ language, onLanguageChange, route }: SiteHe
         </a>
 
         <nav className="site-nav" aria-label={language === 'zh' ? '主导航' : 'Main navigation'}>
-          {route === 'home' ? (
+          {route === 'product' ? (
+            <>
+              <a href="#/">{text.home}</a>
+              <span className="site-nav-current">{text.promo}</span>
+            </>
+          ) : route === 'home' ? (
             <>
               <a href="#product-intro">{text.products}</a>
               <a href="#about">{text.about}</a>

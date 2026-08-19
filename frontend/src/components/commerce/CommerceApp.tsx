@@ -3,31 +3,31 @@ import { Loader2 } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
 import ErrorBoundary from '../ErrorBoundary';
 import LandingView from './LandingView';
+import PaymentView from './PaymentView';
+import ProductPromoView from './ProductPromoView';
+import PurchaseSuccessView from './PurchaseSuccessView';
 import SiteHeader, { type SiteLanguage, type SiteRoute } from './SiteHeader';
 import WorkspaceView from './WorkspaceView';
 
 function readRoute(): SiteRoute {
-  return window.location.hash.startsWith('#/studio') ? 'studio' : 'home';
+  if (window.location.hash.startsWith('#/studio')) return 'studio';
+  if (window.location.hash.startsWith('#/product')) return 'product';
+  if (window.location.hash.startsWith('#/payment')) return 'payment';
+  if (window.location.hash.startsWith('#/success')) return 'success';
+  return 'home';
 }
 
-type DoorPhase = 'closing' | 'impact';
+type TransitionPhase = 'cover' | 'reveal';
 
-function StudioDoors({ phase }: { phase: DoorPhase }) {
+function StudioTransition({ phase }: { phase: TransitionPhase }) {
   return (
-    <div className={`studio-door-overlay studio-door-${phase}`} aria-hidden="true">
-      <div className="studio-door-panel studio-door-left">
+    <div className={`studio-transition-overlay studio-transition-${phase}`} aria-hidden="true">
+      <div className="studio-transition-glow" />
+      <div className="studio-transition-lines">
         <span />
         <span />
         <span />
       </div>
-      <div className="studio-door-panel studio-door-right">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="studio-door-impact" />
-      <div className="studio-door-dust studio-door-dust-left" />
-      <div className="studio-door-dust studio-door-dust-right" />
     </div>
   );
 }
@@ -38,7 +38,7 @@ export default function CommerceApp() {
   const user = useCommerceStore(s => s.user);
   const [route, setRoute] = useState<SiteRoute>(readRoute);
   const [language, setLanguage] = useState<SiteLanguage>('zh');
-  const [doorPhase, setDoorPhase] = useState<DoorPhase | null>(null);
+  const [transitionPhase, setTransitionPhase] = useState<TransitionPhase | null>(null);
   const timers = useRef<number[]>([]);
 
   const clearTimers = () => {
@@ -67,7 +67,7 @@ export default function CommerceApp() {
   useEffect(() => clearTimers, []);
 
   const enterStudio = () => {
-    if (doorPhase) return;
+    if (transitionPhase) return;
     if (!user) {
       window.location.hash = '#auth';
       window.setTimeout(() => document.getElementById('account')?.focus(), 80);
@@ -75,18 +75,17 @@ export default function CommerceApp() {
     }
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    setDoorPhase('closing');
     if (reduced) {
       window.location.hash = '#/studio';
-      delay(() => setDoorPhase(null), 180);
       return;
     }
 
+    setTransitionPhase('cover');
     delay(() => {
       window.location.hash = '#/studio';
-    }, 180);
-    delay(() => setDoorPhase('impact'), 300);
-    delay(() => setDoorPhase(null), 720);
+    }, 280);
+    delay(() => setTransitionPhase('reveal'), 340);
+    delay(() => setTransitionPhase(null), 780);
   };
 
   if (isBootstrapping) {
@@ -100,17 +99,19 @@ export default function CommerceApp() {
     );
   }
 
-  const effectiveRoute: SiteRoute = route === 'studio' && user ? 'studio' : 'home';
+  const effectiveRoute: SiteRoute = route === 'studio' && !user ? 'home' : route;
 
   return (
     <ErrorBoundary name="commerce-app">
-      <div className={effectiveRoute === 'studio' ? 'site-root studio-mode' : 'site-root'}>
+      <div className={effectiveRoute === 'studio' ? 'site-root studio-mode' : effectiveRoute === 'product' ? 'site-root product-mode' : 'site-root'}>
         <SiteHeader language={language} onLanguageChange={setLanguage} route={effectiveRoute} />
-        {effectiveRoute === 'home'
-          ? <LandingView language={language} onEnterStudio={enterStudio} />
-          : <WorkspaceView language={language} />}
+        {effectiveRoute === 'home' && <LandingView language={language} onEnterStudio={enterStudio} />}
+        {effectiveRoute === 'product' && <ProductPromoView language={language} />}
+        {effectiveRoute === 'payment' && <PaymentView language={language} />}
+        {effectiveRoute === 'success' && <PurchaseSuccessView language={language} onEnterStudio={enterStudio} />}
+        {effectiveRoute === 'studio' && <WorkspaceView language={language} />}
       </div>
-      {doorPhase && <StudioDoors phase={doorPhase} />}
+      {transitionPhase && <StudioTransition phase={transitionPhase} />}
     </ErrorBoundary>
   );
 }

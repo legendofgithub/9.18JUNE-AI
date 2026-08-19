@@ -227,7 +227,7 @@ def test_model_services_crud_and_concurrent_version(tmp_path):
             "id": "private-gateway",
             "display_name": "Private Gateway",
             "vendor": "Self-hosted",
-            "base_url": "https://models.internal/v1",
+            "base_url": "https://api.openai.com/custom",
             "protocol": "custom",
             "api_key": "sk-private",
             "version": 0,

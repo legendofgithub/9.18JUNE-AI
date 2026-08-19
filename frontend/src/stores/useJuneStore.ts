@@ -3,13 +3,13 @@ import type { Message, FloatWindow, ContextMenuState, FileItem, Session, ModelCo
 import type { ExplainMode } from '../types';
 import { sseService } from '../services/sseService';
 import { DEFAULT_FOLLOW_UP_SETTINGS, MODEL_BASE_URLS, temperatureValue } from '../types';
+import { API_BASE } from '../config';
 import {
   restoreFloatWindows,
   toThreadPatchRequest,
   toThreadRegisterRequest,
 } from '../utils/harnessRestore';
 
-const API_BASE = 'http://localhost:8000/api';
 const THREAD_PATCH_DELAY_MS = 500;
 const patchTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
@@ -378,10 +378,14 @@ const useJuneStore = create<JuneStore>((set, get) => ({
            return { mainMessages: msgs };
          });
         },
-        () => {
-          set({ reasoningMessageId: aiMsg.id });
-        },
-      );
+         () => {
+           set({ reasoningMessageId: aiMsg.id });
+         },
+         {
+           userMessageId: userMsg.id,
+           assistantMessageId: aiMsg.id,
+         },
+       );
     } catch (e: any) {
       console.error('SSE send failed:', e);
       set(state => {
@@ -732,8 +736,8 @@ const useJuneStore = create<JuneStore>((set, get) => ({
            ),
             reasoningMessageId: null,
           }));
-       },
-        () => {
+         },
+         () => {
           set({ reasoningMessageId: messageId });
         },
       );

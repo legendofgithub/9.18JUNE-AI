@@ -4,11 +4,17 @@
 """
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
+from ..core.exceptions import UnauthorizedException
 from ..core.response import success
 from ..core.config import settings
 from ..services.deepseek import DeepSeekService
 
 router = APIRouter()
+
+
+def _require_admin(request: Request) -> None:
+    if getattr(request.state, "auth_scheme", None) != "admin":
+        raise UnauthorizedException("仅管理员可配置全局模型")
 
 
 class ModelConfigRequest(BaseModel):
@@ -32,8 +38,9 @@ PROVIDERS = [
 
 
 @router.get("/models")
-async def list_models():
+async def list_models(request: Request):
     """获取可用模型列表"""
+    _require_admin(request)
     current_model = settings.llm_default_model
     current_base_url = settings.llm_base_url
     for p in PROVIDERS:
@@ -49,6 +56,7 @@ async def list_models():
 @router.put("/config/model")
 async def set_model(body: ModelConfigRequest, request: Request):
     """设置当前使用的模型"""
+    _require_admin(request)
     svc = request.app.state.deepseek_service
     svc.set_model(body.name, body.base_url or "")
     if body.api_key:
@@ -57,8 +65,9 @@ async def set_model(body: ModelConfigRequest, request: Request):
 
 
 @router.post("/config/test")
-async def test_model_connection(body: ModelConfigRequest):
+async def test_model_connection(body: ModelConfigRequest, request: Request):
     """测试给定模型配置是否能真实访问，不改变当前运行时配置"""
+    _require_admin(request)
     test_service = DeepSeekService()
     test_service.set_model(body.name, body.base_url or "")
     if body.api_key:
@@ -70,6 +79,7 @@ async def test_model_connection(body: ModelConfigRequest):
 @router.put("/config/api-key")
 async def set_api_key(body: ModelConfigRequest, request: Request):
     """设置 API Key（运行时生效，不持久化）"""
+    _require_admin(request)
     if body.api_key:
         svc = request.app.state.deepseek_service
         svc.set_api_key(body.api_key)

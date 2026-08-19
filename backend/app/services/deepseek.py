@@ -14,6 +14,7 @@ import json
 from typing import AsyncGenerator, Dict, List
 
 from ..core.config import settings
+from ..core.url_security import validate_model_base_url
 
 
 class DeepSeekService:
@@ -81,6 +82,7 @@ class DeepSeekService:
         """用一次最小非流式请求验证模型、Base URL 和 API Key。"""
         import httpx
 
+        base_url = validate_model_base_url(self.BASE_URL)
         key = self.get_api_key()
         if not key:
             return {"ok": False, "error": "未配置 API Key"}
@@ -94,7 +96,7 @@ class DeepSeekService:
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(
-                    f"{self.BASE_URL}/chat/completions",
+                    f"{base_url}/chat/completions",
                     headers={
                         "Authorization": f"Bearer {key}",
                         "Content-Type": "application/json",
@@ -130,6 +132,7 @@ class DeepSeekService:
         key = api_key or self.get_api_key()
         used_model = model or self.DEFAULT_MODEL
         request_base_url = base_url or self.BASE_URL
+        request_base_url = validate_model_base_url(request_base_url)
 
         # 无 API Key 时的处理
         if not key:

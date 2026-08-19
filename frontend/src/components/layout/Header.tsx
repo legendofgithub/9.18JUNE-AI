@@ -1,11 +1,12 @@
  import { useState, useEffect } from 'react';
 import { Settings, FolderOpen, Plus, MessageSquare, Trash2, ChevronDown, Key, CheckCircle, XCircle, Loader2, X, Zap, FileText } from 'lucide-react';
- import useJuneStore from '../../stores/useJuneStore';
+import useJuneStore from '../../stores/useJuneStore';
+import { API_BASE } from '../../config';
 
  /** 验证后端 Token 是否有效 */
  async function verifyToken(token: string): Promise<boolean> {
    try {
-     const resp = await fetch('http://localhost:8000/api/status', {
+     const resp = await fetch(`${API_BASE}/status`, {
        headers: { Authorization: `Bearer ${token}` },
      });
      return resp.ok;
@@ -34,7 +35,7 @@ export default function Header() {
     if (!currentSessionId) return;
     try {
       const token = localStorage.getItem('june_api_token');
-      const resp = await fetch(`http://localhost:8000/api/sessions/${currentSessionId}/report`, {
+      const resp = await fetch(`${API_BASE}/sessions/${currentSessionId}/report`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -247,7 +248,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
      const token = localStorage.getItem('june_api_token');
      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-     const resp = await fetch('http://localhost:8000/api/config/test', {
+     const resp = await fetch(`${API_BASE}/config/test`, {
        method: 'POST',
        headers,
        body: JSON.stringify({

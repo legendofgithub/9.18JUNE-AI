@@ -67,6 +67,8 @@ STEP_TOOLS = {
 
 
 class MvpService:
+    PERMISSION_MODES = ("read-only", "workspace-write", "full-access")
+
     TRACKING_START = "<tracking>"
     TRACKING_END = "</tracking>"
 
@@ -146,9 +148,19 @@ class MvpService:
         self.repo.refresh_run_progress(run)
         return self.get_run_detail(owner_id, run_id)
 
-    async def stream_chat(self, owner_id: str, run_id: str, message: str, temperature: float | None = None, file_context: str | None = None):
+    async def stream_chat(
+        self,
+        owner_id: str,
+        run_id: str,
+        message: str,
+        temperature: float | None = None,
+        file_context: str | None = None,
+        permission: str = "read-only",
+    ):
         run = self._get_owned_run(owner_id, run_id)
         self._reject_completed(run)
+        if permission not in self.PERMISSION_MODES:
+            permission = "read-only"
         current = self._current_step(run)
         self.session_repo.add_message(run.id, "user", message, thread_id="main")
         messages = self.session_repo.get_all_messages(run.id, "main")[-12:]
@@ -159,7 +171,7 @@ class MvpService:
         try:
             llm_options = self._llm_options(owner_id)
             async for delta in self.llm.chat(
-                messages=self._build_messages(run, current, messages, file_context),
+                messages=self._build_messages(run, current, messages, file_context, permission),
                 api_key=llm_options["api_key"],
                 model=llm_options["model"],
                 base_url=llm_options["base_url"],
@@ -189,7 +201,7 @@ class MvpService:
             if visible.strip():
                 self.session_repo.add_message(run.id, "assistant", visible.strip(), thread_id="main")
             if tracking:
-                self._apply_tracking(run, current, tracking)
+                self._apply_tracking(run, current, tracking, permission)
             else:
                 self.repo.add_event(run, current, "chat", visible[:500], {})
                 self.repo.db.commit()
@@ -348,7 +360,14 @@ class MvpService:
             thread_id="main",
         )
 
-    def _build_messages(self, run: MvpRunModel, step: RunStepModel, messages: list[dict], file_context: str | None = None) -> list[dict]:
+    def _build_messages(
+        self,
+        run: MvpRunModel,
+        step: RunStepModel,
+        messages: list[dict],
+        file_context: str | None = None,
+        permission: str = "read-only",
+    ) -> list[dict]:
         tool = STEP_TOOLS[step.step_key]
         system = (
             "你是「Vibe Coding 变现训练官」，服务对象是不学技术的零基础商业者。你的任务不是泛聊，而是用自然语言引导 AI，"
@@ -359,6 +378,7 @@ class MvpService:
             "回答末尾必须输出 <tracking>{json}</tracking>，json 字段为 blocker、next_action、vertical、artifacts。"
             "artifacts 是数组，每项包含 step_key、title、content；只能记录用户确认或本轮明确生成的交付物草稿。"
         )
+        system += "\n\n" + self._permission_policy(permission)
         context = (
             f"项目：{run.title}\n目标人群：{run.vertical or '待明确'}\n"
             f"当前节点：{step.step_order}/{len(run.steps)} {step.title}\n"
@@ -376,6 +396,25 @@ class MvpService:
                 "content": f"以下是用户临时文档库中的文件内容，供你阅读参考：\n{file_context}",
             })
         return messages
+
+    def _permission_policy(self, permission: str) -> str:
+        if permission not in self.PERMISSION_MODES:
+            permission = "read-only"
+        policies = {
+            "read-only": (
+                "当前权限为 read-only：你可以阅读用户提供的资料并给出分析、判断和下一步建议，"
+                "但不得声称已经修改文件、执行命令或代替用户完成写入。交付物只能作为建议草稿说明。"
+            ),
+            "workspace-write": (
+                "当前权限为 workspace-write：你可以生成当前商业流程内的交付物草稿，并由系统保存为节点草稿；"
+                "不要声称已修改流程外的文件或执行系统命令。"
+            ),
+            "full-access": (
+                "当前权限为 full-access：你可以给出更主动的执行步骤和外部操作建议，"
+                "但必须明确风险和验收方式；没有用户确认时仍不得声称已经执行。"
+            ),
+        }
+        return policies[permission]
 
     def _build_follow_up_messages(self, run: MvpRunModel, body: FollowUpRequest) -> list[dict]:
         current = self._current_step(run)
@@ -424,11 +463,15 @@ class MvpService:
             return visible, None
         return visible, tracking if isinstance(tracking, dict) else None
 
-    def _apply_tracking(self, run: MvpRunModel, current: RunStepModel, tracking: dict) -> None:
+    def _apply_tracking(self, run: MvpRunModel, current: RunStepModel, tracking: dict, permission: str = "read-only") -> None:
         artifacts = tracking.get("artifacts") or []
         if not isinstance(artifacts, list):
             artifacts = []
         safe_artifacts = [item for item in artifacts if isinstance(item, dict)]
+        suppressed_artifacts = 0
+        if permission == "read-only":
+            suppressed_artifacts = len(safe_artifacts)
+            safe_artifacts = []
         self.repo.apply_tracking(
             run,
             str(tracking.get("blocker", run.blocker)),
@@ -436,7 +479,15 @@ class MvpService:
             str(tracking.get("vertical", run.vertical) or ""),
             safe_artifacts,
         )
-        self.repo.add_event(run, current, "tracking", json.dumps(tracking, ensure_ascii=False)[:4000], tracking)
+        event_tracking = dict(tracking)
+        permission_effect = {
+            "permission": permission,
+            "suppressed_artifact_count": suppressed_artifacts,
+        }
+        if suppressed_artifacts:
+            permission_effect["reason"] = "read-only mode does not auto-save artifact drafts"
+        event_tracking["permission_effect"] = permission_effect
+        self.repo.add_event(run, current, "tracking", json.dumps(event_tracking, ensure_ascii=False)[:4000], event_tracking)
         self.repo.db.commit()
 
     def _step_detail(self, step: RunStepModel) -> dict:

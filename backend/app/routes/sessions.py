@@ -23,6 +23,8 @@ router = APIRouter()
 
 class MessageRequest(BaseModel):
     message: str
+    user_message_id: str | None = None
+    assistant_message_id: str | None = None
 
 
 def _get_service(request: Request):
@@ -109,12 +111,16 @@ async def chat(session_id: str, body: MessageRequest, request: Request):
     # 确保会话存在
     svc.ensure_session(session_id)
     # 保存用户消息
-    svc.save_user_message(session_id, body.message)
+    svc.save_user_message(session_id, body.message, body.user_message_id)
     # 获取当前会话消息列表（含刚保存的用户消息）
     messages = svc.repo.get_messages(session_id)
 
     async def event_generator():
-        async for chunk in svc.stream_main_chat(session_id, messages):
+        async for chunk in svc.stream_main_chat(
+            session_id,
+            messages,
+            assistant_message_id=body.assistant_message_id or "",
+        ):
             if "done" in chunk:
                 yield {
                     "event": "done",

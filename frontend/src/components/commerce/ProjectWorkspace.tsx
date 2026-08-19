@@ -73,6 +73,7 @@ const TEMPERATURE_VALUES: Record<TemperatureLevel, number> = {
 };
 
 const STORAGE_KEY_PREFIX = 'june_project_workspace_';
+const PERMISSION_STORAGE_KEY = 'june_project_permission';
 
 function uid(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -326,28 +327,17 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
       const raw = localStorage.getItem(storageKey);
       if (raw) {
         const parsed = JSON.parse(raw) as Project[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
     } catch {
       // ignore corrupted storage
     }
-    const initialSession: LocalSession = {
-      id: DEFAULT_SESSION_ID,
-      title: '默认会话',
-      messages: currentRun?.messages || [],
-    };
-    return [
-      {
-        id: uid('project'),
-        title: currentRun?.title || '默认项目',
-        sessions: [initialSession],
-      },
-    ];
+    return [];
   });
   const [activeProjectId, setActiveProjectId] = useState<string>(() => projects[0]?.id || '');
-  const [activeSessionId, setActiveSessionId] = useState<string>(DEFAULT_SESSION_ID);
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => projects[0]?.sessions[0]?.id || '');
   const [chatInput, setChatInput] = useState('');
   const [rightOpen, setRightOpen] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(() => window.innerWidth < 1024);
@@ -361,7 +351,10 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [permission, setPermission] = useState<Permission>('read-only');
+  const [permission, setPermission] = useState<Permission>(() => {
+    const saved = localStorage.getItem(PERMISSION_STORAGE_KEY);
+    return saved === 'workspace-write' || saved === 'full-access' ? saved : 'read-only';
+  });
   const [temperature, setTemperature] = useState<TemperatureLevel>('medium');
   const [showModelServices, setShowModelServices] = useState(false);
   const [folderNotice, setFolderNotice] = useState('');
@@ -370,18 +363,20 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
   const uploadInputRef = useRef<HTMLInputElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const chatMessagesRef = useRef<HTMLDivElement>(null);
+    const chatSessionRef = useRef<string | null>(null);
 
   const activeProject = projects.find(project => project.id === activeProjectId) || projects[0];
   const activeSession = activeProject?.sessions.find(session => session.id === activeSessionId) || activeProject?.sessions[0];
 
   useEffect(() => {
     if (!currentRun) return;
+    const targetId = chatSessionRef.current || DEFAULT_SESSION_ID;
     setProjects(prev => prev.map(project => {
-      if (!project.sessions.some(session => session.id === DEFAULT_SESSION_ID)) return project;
+      if (!project.sessions.some(session => session.id === targetId)) return project;
       return {
         ...project,
         sessions: project.sessions.map(session =>
-          session.id === DEFAULT_SESSION_ID
+          session.id === targetId
             ? { ...session, messages: currentRun.messages }
             : session,
         ),
@@ -430,7 +425,8 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
     setProjects(prev => prev.map(project => project.id === activeProject?.id ? updater(project) : project));
   };
 
-  const createProject = () => {
+  const createProject = (event?: React.MouseEvent) => {
+    event?.preventDefault();
     const title = newProjectName.trim() || `新项目 ${projects.length + 1}`;
     const project: Project = {
       id: uid('project'),
@@ -456,6 +452,37 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
     setActiveSessionId(session.id);
   };
 
+  const deleteProject = (projectId: string) => {
+    const target = projects.find(project => project.id === projectId);
+    if (!target) return;
+    const message = language === 'zh'
+      ? `确定删除项目「${target.title}」吗？该项目下的所有会话和对话记录将一并删除，且无法恢复。`
+      : `Delete project "${target.title}"? All of its sessions and messages will be removed permanently.`;
+    if (!window.confirm(message)) return;
+    const next = projects.filter(project => project.id !== projectId);
+    setProjects(next);
+    if (activeProjectId === projectId) {
+      setActiveProjectId(next[0]?.id || '');
+      setActiveSessionId(next[0]?.sessions[0]?.id || '');
+    }
+  };
+
+  const deleteSession = (sessionId: string) => {
+    const project = activeProject;
+    if (!project) return;
+    const session = project.sessions.find(item => item.id === sessionId);
+    if (!session) return;
+    const message = language === 'zh'
+      ? `确定删除会话「${session.title}」吗？该会话的对话记录将无法恢复。`
+      : `Delete session "${session.title}"? Its messages will be removed permanently.`;
+    if (!window.confirm(message)) return;
+    const nextSessions = project.sessions.filter(item => item.id !== sessionId);
+    setProjects(prev => prev.map(item => item.id === project.id ? { ...item, sessions: nextSessions } : item));
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(nextSessions[0]?.id || '');
+    }
+  };
+
   const selectFolder = (files: FileList | null) => {
     if (!files || files.length === 0 || !activeProject) return;
     const first = files[0];
@@ -475,7 +502,8 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
         : '';
       const content = baseContent;
     if (!content || !activeSession) return;
-    if (activeSession.id === DEFAULT_SESSION_ID && currentRun) {
+    if (currentRun && currentRun.status !== 'completed') {
+      chatSessionRef.current = activeSession.id;
       setChatInput('');
       const userMessage: Message = {
           id: uid('msg'),
@@ -508,7 +536,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                 : session,
             ),
           }));
-          void sendChat(content, TEMPERATURE_VALUES[temperature], fileContext || undefined);
+          void sendChat(content, TEMPERATURE_VALUES[temperature], fileContext || undefined, permission);
       return;
     }
     const userMessage: Message = {
@@ -703,7 +731,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                     }}
                   />
                   <div className="project-create-actions">
-                    <button className="coach-primary-button" onClick={createProject}>
+                    <button type="button" className="project-create-button coach-primary-button" onClick={createProject}>
                       <CheckCircle2 size={14} /> {language === 'zh' ? '创建' : 'Create'}
                     </button>
                     <button className="coach-secondary-button" onClick={() => setShowNewProject(false)}>
@@ -720,31 +748,51 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                   const isActive = project.id === activeProject?.id;
                   return (
                     <div key={project.id} className={`project-item ${isActive ? 'is-active' : ''}`}>
-                      <button
-                        className="project-item-head"
-                        onClick={() => {
-                          setActiveProjectId(project.id);
-                          setActiveSessionId(project.sessions[0]?.id || DEFAULT_SESSION_ID);
-                        }}
-                      >
-                        <Folder size={15} className="project-folder-icon" />
-                        <span className="project-item-title">{project.title}</span>
-                        {project.folderName && <span className="project-folder-name">{project.folderName}</span>}
-                        <ChevronDown size={14} className={isActive ? 'project-chevron open' : 'project-chevron'} />
-                      </button>
+                      <div className="project-item-head">
+                        <button
+                          className="project-item-select"
+                          onClick={() => {
+                            setActiveProjectId(project.id);
+                            setActiveSessionId(project.sessions[0]?.id || '');
+                          }}
+                        >
+                          <Folder size={15} className="project-folder-icon" />
+                          <span className="project-item-title">{project.title}</span>
+                          {project.folderName && <span className="project-folder-name">{project.folderName}</span>}
+                          <ChevronDown size={14} className={isActive ? 'project-chevron open' : 'project-chevron'} />
+                        </button>
+                        <button
+                          className="project-delete"
+                          title={language === 'zh' ? '删除项目' : 'Delete project'}
+                          onClick={() => deleteProject(project.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
 
                       {isActive && (
                         <div className="session-list">
                           {project.sessions.map(session => (
-                            <button
+                            <div
                               key={session.id}
                               className={`session-item ${session.id === activeSession?.id ? 'is-active' : ''}`}
-                              onClick={() => setActiveSessionId(session.id)}
                             >
-                              <MessageSquareIcon />
-                              <span>{session.title}</span>
-                              <span className="session-message-count">{session.messages.length}</span>
-                            </button>
+                              <button
+                                className="session-item-select"
+                                onClick={() => setActiveSessionId(session.id)}
+                              >
+                                <MessageSquareIcon />
+                                <span className="session-item-title">{session.title}</span>
+                                <span className="session-message-count">{session.messages.length}</span>
+                              </button>
+                              <button
+                                className="session-delete"
+                                title={language === 'zh' ? '删除会话' : 'Delete session'}
+                                onClick={() => deleteSession(session.id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           ))}
                           <button className="session-add" onClick={createSession}>
                             <Plus size={13} /> {language === 'zh' ? '新建会话' : 'New Session'}
@@ -755,6 +803,12 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                   );
                 })}
               </div>
+
+              {projects.length === 0 && (
+                <div className="project-empty-hint">
+                  {language === 'zh' ? '还没有项目，点击上方「新建项目」开始创建' : 'No projects yet — click "New Project" to get started'}
+                </div>
+              )}
 
               <div className="project-left-footer">
                 <button className="dsh-settings-button" onClick={() => setShowSettings(true)}>
@@ -770,8 +824,9 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
 
         {/* ===== 中间：模型对话区域 ===== */}
         <section className="dsh-main project-chat-main">
-          <div className="chat-panel">
-            <header className="chat-panel-header">
+          {activeProject && activeSession ? (
+            <div className="chat-panel">
+              <header className="chat-panel-header">
               <div className="chat-panel-titles">
                 <h1>{activeProject?.title || '未选择项目'}</h1>
                 <p>{activeSession?.title || '未选择会话'}{activeProject?.folderName ? ` · ${activeProject.folderName}` : ''}</p>
@@ -833,7 +888,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                 className="coach-textarea"
                 rows={3}
                 value={chatInput}
-                disabled={isStreaming && activeSession?.id === DEFAULT_SESSION_ID}
+                disabled={isStreaming}
                 placeholder={language === 'zh' ? '输入你的问题或项目指令…' : 'Type your message…'}
                 onChange={event => setChatInput(event.target.value)}
                 onKeyDown={event => {
@@ -847,15 +902,42 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                 <span className="chat-composer-hint">Enter 发送 · Alt+Enter 换行</span>
                 <button
                   className="coach-primary-button"
-                  disabled={!chatInput.trim() || (isStreaming && activeSession?.id === DEFAULT_SESSION_ID)}
+                  disabled={!chatInput.trim() || isStreaming}
                   onClick={handleSend}
                 >
-                  {isStreaming && activeSession?.id === DEFAULT_SESSION_ID ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                  {isStreaming ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                   {language === 'zh' ? '发送' : 'Send'}
                 </button>
               </div>
             </footer>
           </div>
+          ) : (
+            <div className="chat-panel">
+              <div className="chat-empty">
+                {activeProject ? <MessageSquareIcon /> : <Folder size={28} />}
+                <p>
+                  {activeProject
+                    ? (language === 'zh' ? '这个项目还没有会话。点击下方按钮新建一个会话，开始与模型对话。' : 'This project has no sessions yet. Create one to start chatting with the model.')
+                    : (language === 'zh' ? '还没有项目和会话。点击下方按钮创建你的第一个项目，然后新建会话开始对话。' : 'No projects or sessions yet. Create your first project, then add a session to start chatting.')}
+                </p>
+                <button
+                  className="coach-primary-button"
+                  onClick={() => {
+                    if (activeProject) {
+                      createSession();
+                    } else {
+                      setShowNewProject(true);
+                    }
+                  }}
+                >
+                  <Plus size={14} />
+                  {activeProject
+                    ? (language === 'zh' ? '新建会话' : 'New Session')
+                    : (language === 'zh' ? '新建项目' : 'New Project')}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* ===== 右侧：详情 / 文档库 ===== */}
@@ -1087,13 +1169,10 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                 )}
               </div>
             </section>
-          ) : (
-            <button className="dsh-right-open" onClick={() => setRightOpen(true)}>
-              <PanelRightOpen size={16} /> {language === 'zh' ? '详情' : 'Details'}
-            </button>
-          )}
+          ) : null}
         </aside>
       </div>
+
 
       {/* ===== 设置弹层 ===== */}
       {showSettings && (
@@ -1111,7 +1190,10 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                   <button
                     key={item}
                     className={`permission-option ${permission === item ? 'is-active' : ''}`}
-                    onClick={() => setPermission(item)}
+                    onClick={() => {
+                      setPermission(item);
+                      localStorage.setItem(PERMISSION_STORAGE_KEY, item);
+                    }}
                   >
                     {item === 'read-only' ? <Lock size={14} /> : item === 'workspace-write' ? <Save size={14} /> : <ShieldCheck size={14} />}
                     {item === 'read-only' ? 'Read only' : item === 'workspace-write' ? 'Workspace write' : 'Full access'}

@@ -13,7 +13,7 @@ import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from .core.config import settings
 from .core.exceptions import JuneException
 from .core.security import TokenAuthMiddleware, ensure_token
-from .models.database import init_db, get_session
+from .models.database import get_request_scoped_session, init_db, request_db_scope
 from .repositories import SessionRepository
 from .repositories.commerce_repo import CommerceRepository
 from .services import SessionService
@@ -54,18 +54,19 @@ async def lifespan(app: FastAPI):
     # 确保 API Token（开发模式自动生成）
     ensure_token()
 
-    # 装配依赖链
-    db_session = get_session(settings.db_path)
+    # 装配依赖链；仓储持有的代理会在每个请求内解析到独立 Session。
+    db_session = get_request_scoped_session()
     session_repo = SessionRepository(db_session)
     commerce_repo = CommerceRepository(db_session)
-    commerce_repo.seed_products()
-    if settings.JUNE_ADMIN_PASSWORD:
-        commerce_repo.seed_admin(
-            settings.JUNE_ADMIN_IDENTITY,
-            settings.JUNE_ADMIN_EMAIL,
-            settings.JUNE_ADMIN_PASSWORD,
-            settings.JUNE_ADMIN_DISPLAY_NAME,
-        )
+    with request_db_scope(settings.db_path):
+        commerce_repo.seed_products()
+        if settings.JUNE_ADMIN_PASSWORD:
+            commerce_repo.seed_admin(
+                settings.JUNE_ADMIN_IDENTITY,
+                settings.JUNE_ADMIN_EMAIL,
+                settings.JUNE_ADMIN_PASSWORD,
+                settings.JUNE_ADMIN_DISPLAY_NAME,
+            )
     deepseek_service = DeepSeekService()
     app.state.session_service = SessionService(session_repo, deepseek_service, thread_manager)
     app.state.deepseek_service = deepseek_service
@@ -150,10 +151,18 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # ── 注册路由 ──
 
-app.include_router(sessions.router, prefix="/api")
-app.include_router(models.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")
-app.include_router(commerce.router, prefix="/api")
+async def request_database_scope():
+    with request_db_scope(settings.db_path):
+        yield
+
+
+db_dependency = [Depends(request_database_scope)]
+
+
+app.include_router(sessions.router, prefix="/api", dependencies=db_dependency)
+app.include_router(models.router, prefix="/api", dependencies=db_dependency)
+app.include_router(auth.router, prefix="/api", dependencies=db_dependency)
+app.include_router(commerce.router, prefix="/api", dependencies=db_dependency)
 
 
 # ── 公开端点 ──

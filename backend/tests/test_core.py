@@ -137,17 +137,21 @@ def temp_db():
     from app.models.database import init_db, get_session
 
     tmp = tempfile.mktemp(suffix='.db')
-    # Reset the global engine singleton so each test gets its own engine
+    # Reset cached engines so each test gets its own engine
     import app.models.database as db_module
-    db_module._engine = None
+    for engine in db_module._engines.values():
+        engine.dispose()
+    db_module._engines.clear()
+    db_module._session_factories.clear()
     init_db(tmp)
     db = get_session(tmp)
     yield db
     db.close()
-    # Dispose engine to release the file lock before unlinking on Windows
-    if db_module._engine is not None:
-        db_module._engine.dispose()
-    db_module._engine = None
+    # Dispose engines to release SQLite/WAL file locks on Windows.
+    for engine in db_module._engines.values():
+        engine.dispose()
+    db_module._engines.clear()
+    db_module._session_factories.clear()
     if os.path.exists(tmp):
         os.unlink(tmp)
 

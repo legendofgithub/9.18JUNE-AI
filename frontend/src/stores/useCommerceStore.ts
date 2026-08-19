@@ -12,8 +12,8 @@ import type {
   Order,
   Product,
 } from '../types';
+import { API_BASE } from '../config';
 
-const API_BASE = 'http://localhost:8000/api';
 const USER_TOKEN_KEY = 'june_user_token';
 let bootstrapPromise: Promise<void> | null = null;
 
@@ -144,7 +144,12 @@ interface CommerceStore {
   selectRun: (runId: string) => Promise<void>;
   createRun: (title: string, vertical: string) => Promise<void>;
   patchStep: (stepId: string, artifactTitle: string, artifactContent: string, completed: boolean) => Promise<void>;
-  sendChat: (content: string, temperature?: number, fileContext?: string) => Promise<void>;
+  sendChat: (
+    content: string,
+    temperature?: number,
+    fileContext?: string,
+    permission?: 'read-only' | 'workspace-write' | 'full-access',
+  ) => Promise<void>;
   sendFollowUp: (params: {
     threadId: string;
     parentThreadId: string;
@@ -457,7 +462,7 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
     }
   },
 
-  sendChat: async (content, temperature, fileContext) => {
+  sendChat: async (content, temperature, fileContext, permission) => {
     const state = get();
     const run = state.currentRun;
     if (!run || state.isStreaming || !content.trim()) return;
@@ -478,7 +483,12 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
     });
 
     try {
-      await streamRequest(`${API_BASE}/mvp-runs/${run.id}/chat`, { message: content.trim(), temperature, file_context: fileContext }, delta => {
+      await streamRequest(`${API_BASE}/mvp-runs/${run.id}/chat`, {
+        message: content.trim(),
+        temperature,
+        file_context: fileContext,
+        permission: permission ?? 'read-only',
+      }, delta => {
         const current = get().currentRun;
         if (!current) return;
         const messages = [...current.messages];

@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, Field
@@ -26,6 +27,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     file_context: str | None = Field(default=None, max_length=20000)
+    permission: Literal["read-only", "workspace-write", "full-access"] = "read-only"
 
 
 def _owner(request: Request) -> str:
@@ -171,6 +173,7 @@ async def chat(run_id: str, body: ChatRequest, request: Request):
                 body.message,
                 temperature=body.temperature,
                 file_context=body.file_context,
+                permission=body.permission,
             ):
                 if chunk.get("type") == "reasoning":
                     yield {"event": "message", "data": json.dumps({"type": "reasoning"})}

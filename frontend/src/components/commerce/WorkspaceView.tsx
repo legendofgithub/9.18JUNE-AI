@@ -20,6 +20,7 @@ import CoachLaunchPanel, { CoachSettingsPanel } from './CoachLaunchPanel';
 import ModelServicesPanel from './ModelServicesPanel';
 import ProjectWorkspace from './ProjectWorkspace';
 import useCommerceStore from '../../stores/useCommerceStore';
+import { API_BASE } from '../../config';
 import type { Message } from '../../types';
 import type { SiteLanguage } from './SiteHeader';
 
@@ -29,7 +30,7 @@ function generateThreadId() {
 
 function downloadReport(runId: string) {
   const token = localStorage.getItem('june_user_token');
-  fetch(`http://localhost:8000/api/mvp-runs/${runId}/report`, {
+  fetch(`${API_BASE}/mvp-runs/${runId}/report`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
     .then(async response => {
@@ -533,13 +534,10 @@ export default function WorkspaceView({ language }: { language: SiteLanguage }) 
               </>
             )}
           </section>
-          ) : (
-            <button className="dsh-right-open" onClick={() => setRightOpen(true)}>
-              <PanelRightClose size={16} /> 详情
-            </button>
-          )}
+          ) : null}
         </aside>
       </div>
+
 
       {error && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[min(92vw,560px)] coach-card px-4 py-3">

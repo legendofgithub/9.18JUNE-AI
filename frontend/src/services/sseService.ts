@@ -1,6 +1,6 @@
 import type { FollowUpRequest } from '../types';
+import { API_BASE } from '../config';
 
-const API_BASE = 'http://localhost:8000/api';
 
 export interface SSEServiceConfig {
   timeoutMs: number;
@@ -47,10 +47,15 @@ class SSEService {
     onDelta: DeltaCallback,
     onReferences?: ReferencesCallback,
     onReasoning?: ReasoningCallback,
+    messageIds?: { userMessageId?: string; assistantMessageId?: string },
   ): Promise<void> {
     return this.streamRequestWithRetry(
       `${this.apiBase}/sessions/${sessionId}/chat`,
-      { message },
+      {
+        message,
+        user_message_id: messageIds?.userMessageId,
+        assistant_message_id: messageIds?.assistantMessageId,
+      },
       onDelta,
       onReferences,
       onReasoning,
@@ -107,11 +112,26 @@ class SSEService {
   ): Promise<void> {
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      let receivedStreamOutput = false;
       try {
-        await this.streamRequest(url, body, onDelta, onReferences, onReasoning);
+        await this.streamRequest(
+          url,
+          body,
+          delta => {
+            receivedStreamOutput = true;
+            onDelta(delta);
+          },
+          onReferences,
+          () => {
+            receivedStreamOutput = true;
+            onReasoning?.();
+          },
+        );
         return;
       } catch (e: any) {
         lastError = e;
+        // Retrying after partial output would append two provider responses.
+        if (receivedStreamOutput) throw e;
         if (e.name === 'AbortError') return;
         if (attempt < this.config.maxRetries) {
           const delay = Math.min(
@@ -134,6 +154,7 @@ class SSEService {
   ): Promise<void> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const token = getToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -150,7 +171,7 @@ class SSEService {
         const errorText = await response.text();
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
-      const reader = response.body?.getReader();
+      reader = response.body?.getReader() ?? null;
       if (!reader) throw new Error('No response body');
       const decoder = new TextDecoder();
       let buffer = '';
@@ -163,27 +184,29 @@ class SSEService {
         for (const line of lines) {
           if (line === 'data: : heartbeat' || line.trim() === ': heartbeat') continue;
           if (line.startsWith('data: ')) {
+            let data: any;
             try {
-              const data = JSON.parse(line.slice(6));
-              if (data.type === 'reasoning') {
-                onReasoning?.();
-              }
-              if (data.delta) {
-                onDelta(data.delta);
-              }
-              if (data.error) {
-                onDelta(`\n\n[error] ${data.error}`);
-              }
-              if (data.files && onReferences) {
-                onReferences(data.files);
-              }
+              data = JSON.parse(line.slice(6));
             } catch {
-              // skip malformed lines
+              continue;
+            }
+            if (data.type === 'reasoning') {
+              onReasoning?.();
+            }
+            if (data.delta) {
+              onDelta(data.delta);
+            }
+            if (data.error) {
+              throw new Error(data.error);
+            }
+            if (data.files && onReferences) {
+              onReferences(data.files);
             }
           }
         }
       }
     } finally {
+      void reader?.cancel().catch(() => undefined);
       clearTimeout(timeoutId);
     }
   }

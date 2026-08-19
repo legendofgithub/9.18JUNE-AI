@@ -155,11 +155,19 @@ class SessionService:
             "messages": self.repo.get_messages(session.id, thread_id="main"),
         }
 
-    def save_user_message(self, session_id: str, content: str) -> dict:
-        msg = self.repo.add_message(session_id, "user", content, thread_id="main")
+    def save_user_message(self, session_id: str, content: str, message_id: str | None = None) -> dict:
+        if message_id:
+            msg = self.repo.add_message_once(message_id, session_id, "user", content, thread_id="main")
+        else:
+            msg = self.repo.add_message(session_id, "user", content, thread_id="main")
         return self._message_to_dict(msg, "main")
 
-    async def stream_main_chat(self, session_id: str, session_messages: list[dict]):
+    async def stream_main_chat(
+        self,
+        session_id: str,
+        session_messages: list[dict],
+        assistant_message_id: str = "",
+    ):
         full_content = ""
         main_thread_id = self._storage_main_id(session_id)
         try:
@@ -185,7 +193,16 @@ class SessionService:
                     yield {"delta": delta, "type": "text"}
         finally:
             if full_content:
-                self.repo.add_message(session_id, "assistant", full_content, thread_id="main")
+                if assistant_message_id:
+                    self.repo.add_message_once(
+                        assistant_message_id,
+                        session_id,
+                        "assistant",
+                        full_content,
+                        thread_id="main",
+                    )
+                else:
+                    self.repo.add_message(session_id, "assistant", full_content, thread_id="main")
             yield {"done": True, "thread_id": "main", "usage": {}}
             self.thread_mgr.close(main_thread_id, cascade=False)
 

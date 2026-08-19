@@ -9,8 +9,12 @@ SQLAlchemy ORM 模型定义
 """
 import uuid
 import time
+from pathlib import Path
+from contextlib import contextmanager
+from contextvars import ContextVar
 from sqlalchemy import Column, String, Integer, Text, Float, Boolean, ForeignKey, create_engine, inspect, text
-from sqlalchemy.orm import declarative_base, relationship, Session
+from sqlalchemy import event
+from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 Base = declarative_base()
 
@@ -295,21 +299,38 @@ class RunEventModel(Base):
     created_at = Column(Float, default=lambda: time.time())
 
 
-# ---- 数据库引擎（按需创建）----
+# ---- 数据库引擎与请求级会话 ----
 
-_engine = None
+_engines: dict[str, object] = {}
+_session_factories: dict[str, sessionmaker] = {}
+_request_session: ContextVar[Session | None] = ContextVar("june_request_session", default=None)
 
 
 def get_engine(db_path: str):
     """获取数据库引擎（单例）"""
-    global _engine
-    if _engine is None:
-        _engine = create_engine(
+    key = str(Path(db_path).resolve())
+    if key not in _engines:
+        engine = create_engine(
             f"sqlite:///{db_path}",
-            connect_args={"check_same_thread": False},  # SQLite 多线程支持
+            connect_args={"check_same_thread": False, "timeout": 30},
             echo=False,
         )
-    return _engine
+        _install_sqlite_pragmas(engine)
+        _engines[key] = engine
+    return _engines[key]
+
+
+def _install_sqlite_pragmas(engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
 
 
 def init_db(db_path: str) -> None:
@@ -341,3 +362,41 @@ def _migrate_sqlite(engine) -> None:
 def get_session(db_path: str) -> Session:
     """获取新的数据库会话"""
     return Session(get_engine(db_path))
+
+
+class RequestScopedSession:
+    """Delegate repository operations to the session bound to the current request."""
+
+    def _current(self) -> Session:
+        session = _request_session.get()
+        if session is None:
+            raise RuntimeError("Database session is only available inside a request scope")
+        return session
+
+    def __getattr__(self, name):
+        return getattr(self._current(), name)
+
+    def close(self) -> None:
+        session = _request_session.get()
+        if session is not None:
+            session.close()
+
+
+@contextmanager
+def request_db_scope(db_path: str):
+    """Create one SQLAlchemy session for a complete HTTP request/stream."""
+    key = str(Path(db_path).resolve())
+    if key not in _session_factories:
+        _session_factories[key] = sessionmaker(bind=get_engine(db_path), expire_on_commit=False)
+    session = _session_factories[key]()
+    token = _request_session.set(session)
+    try:
+        yield session
+    finally:
+        _request_session.reset(token)
+        session.rollback()
+        session.close()
+
+
+def get_request_scoped_session() -> RequestScopedSession:
+    return RequestScopedSession()

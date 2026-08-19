@@ -7,6 +7,7 @@ import httpx
 from ..core.config import settings
 from ..core.exceptions import ValidationException
 from ..core.security import decrypt_api_key, encrypt_api_key
+from ..core.url_security import validate_model_base_url
 from ..models.database import EntitlementModel, InstalledSkillModel, MvpRunModel, OrderModel, ProductModel
 from ..models.database import ModelEntryModel, ModelServiceModel
 from ..repositories.commerce_repo import CommerceRepository
@@ -155,7 +156,7 @@ class CommerceService:
 
         service.display_name = payload.display_name
         service.vendor = payload.vendor or payload.display_name
-        service.base_url = payload.base_url.rstrip("/")
+        service.base_url = validate_model_base_url(payload.base_url)
         service.protocol = payload.protocol
         if payload.api_key.strip():
             service.encrypted_api_key = encrypt_api_key(payload.api_key.strip())
@@ -182,14 +183,16 @@ class CommerceService:
 
     async def discover_models(self, owner_id: str, service_id: str, base_url: str, api_key: str) -> list[dict]:
         service = self.repo.get_model_service(owner_id, service_id)
+        safe_base_url = validate_model_base_url(base_url)
         key = api_key.strip() or decrypt_api_key(service.encrypted_api_key)
         if not key:
             raise ValidationException("请先填写访问密钥再探测模型")
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 response = await client.get(
-                    f"{base_url.rstrip('/')}/models",
+                    f"{safe_base_url}/models",
                     headers={"Authorization": f"Bearer {key}"},
+                    follow_redirects=False,
                 )
             if response.status_code != 200:
                 raise ValidationException(f"模型探测失败：HTTP {response.status_code}")
@@ -273,6 +276,7 @@ class CommerceService:
             raise ValidationException("请填写访问密钥后再启动")
         if not resolved_base_url:
             raise ValidationException("请选择 AI 工具后再启动")
+        resolved_base_url = validate_model_base_url(resolved_base_url)
 
         self.llm.set_model(resolved_model, resolved_base_url)
         self.llm.set_api_key(resolved_key)

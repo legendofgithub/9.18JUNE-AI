@@ -15,6 +15,11 @@ def test_set_model_updates_runtime_llm_service():
         BASE_URL='https://open.bigmodel.cn/api/paas/v4',
     )
     app = FastAPI()
+    @app.middleware('http')
+    async def mark_admin(request, call_next):
+        request.state.auth_scheme = 'admin'
+        return await call_next(request)
+
     app.include_router(router, prefix='/api')
     app.state.deepseek_service = service
 

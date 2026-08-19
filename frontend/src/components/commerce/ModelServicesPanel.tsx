@@ -14,6 +14,16 @@ type Draft = {
   models: ModelEntryConfig[];
 };
 
+// 常用供应商预设：非技术用户只需“选工具 + 填密钥”，端点与协议自动带好
+const PRESET_PROVIDERS: { id: string; label: string; baseUrl: string; protocol: ModelServiceConfig['protocol']; modelId: string; modelName: string }[] = [
+  { id: 'zhipu', label: '智谱 GLM（Zhipu）', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', protocol: 'openai-compatible', modelId: 'glm-5.2', modelName: 'GLM-5.2' },
+  { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', protocol: 'openai-compatible', modelId: 'deepseek-chat', modelName: 'DeepSeek Chat' },
+  { id: 'openai', label: 'OpenAI 兼容', baseUrl: 'https://api.openai.com/v1', protocol: 'openai-compatible', modelId: 'gpt-4o', modelName: 'GPT-4o' },
+  { id: 'moonshot', label: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', protocol: 'openai-compatible', modelId: 'moonshot-v1-128k', modelName: 'Kimi 128K' },
+  { id: 'qwen', label: '通义千问 Qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', protocol: 'openai-compatible', modelId: 'qwen-plus', modelName: 'Qwen Plus' },
+  { id: 'custom', label: '自定义（OpenAI 兼容）', baseUrl: '', protocol: 'openai-compatible', modelId: '', modelName: '' },
+];
+
 const emptyModel = (): ModelEntryConfig => ({
   id: '',
   modelId: '',
@@ -25,7 +35,7 @@ const emptyModel = (): ModelEntryConfig => ({
 
 const emptyDraft = (): Draft => ({
   id: '',
-  displayName: '自定义 OpenAI 兼容网关',
+  displayName: '',
   vendor: 'Custom',
   baseUrl: '',
   protocol: 'openai-compatible',
@@ -33,6 +43,20 @@ const emptyDraft = (): Draft => ({
   version: 0,
   models: [emptyModel()],
 });
+
+function applyPreset(draft: Draft, presetId: string): Draft {
+  const preset = PRESET_PROVIDERS.find(item => item.id === presetId);
+  if (!preset) return draft;
+  return {
+    ...draft,
+    id: preset.id,
+    vendor: preset.id === 'custom' ? 'Custom' : preset.id,
+    displayName: draft.displayName || preset.label,
+    baseUrl: preset.baseUrl,
+    protocol: preset.protocol,
+    models: [{ ...emptyModel(), modelId: preset.modelId, displayName: preset.modelName }],
+  };
+}
 
 function toDraft(service: ModelServiceConfig): Draft {
   return {
@@ -133,11 +157,11 @@ export default function ModelServicesPanel() {
     <section className="model-services-panel">
       <header className="model-services-header">
         <div>
-          <h2>模型服务总览</h2>
-          <p>{services.length} 个服务 · {totalModels} 个模型 · 草稿互不覆盖</p>
+          <h2>连接你的 AI 助手</h2>
+          <p>选择一家服务商并填入密钥，超级个体训练师就能开始工作。{services.length} 个服务 · {totalModels} 个模型</p>
         </div>
         <button type="button" className="studio-secondary-button" onClick={() => setNewDraft(emptyDraft())}>
-          <Plus size={14} /> 自定义服务
+          <Plus size={14} /> 连接新助手
         </button>
       </header>
 
@@ -154,10 +178,9 @@ export default function ModelServicesPanel() {
                 <small>{service.vendor}</small>
               </span>
               <span className="model-service-meta">
-                <small>{service.protocol === 'openai-compatible' ? 'OpenAI 兼容' : service.protocol}</small>
                 <small>{service.models.length} 模型</small>
+                <small className={service.apiKeyReady ? 'text-ready' : 'text-muted'}>{service.apiKeyReady ? '已连接' : '待填密钥'}</small>
               </span>
-              <span className={service.apiKeyReady ? 'status-dot ready' : 'status-dot'} />
               <ChevronDown size={16} className={expanded === service.id ? 'rotate-180' : ''} />
             </button>
 
@@ -173,86 +196,94 @@ export default function ModelServicesPanel() {
                   }
                 }}
               >
+                {/* 主区：非技术用户只需填密钥 */}
                 <div className="model-edit-grid">
                   <label>API Key（只写）
-                    <input type="password" value={drafts[service.id].apiKey} placeholder={service.apiKeyReady ? '已保存，留空保持' : '未配置'} onChange={event => patchDraft(service.id, { apiKey: event.target.value })} />
+                    <input type="password" value={drafts[service.id].apiKey} placeholder={service.apiKeyReady ? '已保存，留空保持' : '粘贴你的密钥'} onChange={event => patchDraft(service.id, { apiKey: event.target.value })} />
                   </label>
-                  <label>显示名
-                    <input value={drafts[service.id].displayName} onChange={event => patchDraft(service.id, { displayName: event.target.value })} />
-                  </label>
-                  <label>BaseURL 端点
-                    <input value={drafts[service.id].baseUrl} onChange={event => patchDraft(service.id, { baseUrl: event.target.value })} />
-                  </label>
-                  <label>通信协议
-                    <select value={drafts[service.id].protocol} onChange={event => patchDraft(service.id, { protocol: event.target.value as ModelServiceConfig['protocol'] })}>
-                      <option value="openai-compatible">OpenAI 兼容</option>
-                      <option value="native">原生</option>
-                      <option value="custom">自定义</option>
-                    </select>
+                  <label>助手名称
+                    <input value={drafts[service.id].displayName} placeholder="例如：我的 DeepSeek" onChange={event => patchDraft(service.id, { displayName: event.target.value })} />
                   </label>
                 </div>
 
-                <div className="model-entry-list">
-                  {drafts[service.id].models.map((model, index) => (
-                    <div key={model.id || index} className="model-entry-row">
-                      <input value={model.modelId} placeholder="模型 ID" onChange={event => patchModel(service.id, index, { modelId: event.target.value })} />
-                      <input value={model.displayName} placeholder="显示名" onChange={event => patchModel(service.id, index, { displayName: event.target.value })} />
-                      <input defaultValue={formatTokens(model.contextTokens)} placeholder="上下文" onChange={event => {
-                        const value = parseTokens(event.target.value);
-                        if (Number.isFinite(value)) patchModel(service.id, index, { contextTokens: value });
-                      }} />
-                      <input type="number" value={model.maxOutputTokens} onChange={event => patchModel(service.id, index, { maxOutputTokens: Number(event.target.value) })} />
-                      <select value={model.reasoning} onChange={event => patchModel(service.id, index, { reasoning: event.target.value as ModelEntryConfig['reasoning'] })}>
-                        <option value="low">低</option>
-                        <option value="medium">中</option>
-                        <option value="high">高</option>
+                {/* 高级设置：端点 / 协议 / 模型明细，默认收起 */}
+                <details className="advanced-settings">
+                  <summary>高级设置（端点、协议、模型）</summary>
+                  <div className="model-edit-grid">
+                    <label>BaseURL 端点
+                      <input value={drafts[service.id].baseUrl} placeholder="https://" onChange={event => patchDraft(service.id, { baseUrl: event.target.value })} />
+                    </label>
+                    <label>通信协议
+                      <select value={drafts[service.id].protocol} onChange={event => patchDraft(service.id, { protocol: event.target.value as ModelServiceConfig['protocol'] })}>
+                        <option value="openai-compatible">OpenAI 兼容</option>
+                        <option value="native">原生</option>
+                        <option value="custom">自定义</option>
                       </select>
-                      <button type="button" onClick={() => patchDraft(service.id, { models: drafts[service.id].models.filter((_, i) => i !== index) })}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                    </label>
+                  </div>
 
-                <div className="model-entry-actions">
-                  <button type="button" onClick={() => patchDraft(service.id, { models: [...drafts[service.id].models, emptyModel()] })}>
-                    <Plus size={14} /> 添加模型
-                  </button>
-                  <button type="button" disabled={isBusy || discovering} onClick={() => void discoverNow(drafts[service.id], service.id)}>
-                    {discovering ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} 从服务端获取模型
-                  </button>
-                  {service.apiKeyReady && (
-                    <button type="button" disabled={isBusy} onClick={() => void activate(service.id, service.models[0]?.modelId || '')}>
-                      <CheckCircle2 size={14} /> 设为当前服务
-                    </button>
-                  )}
-                </div>
-
-                {candidates[service.id]?.length > 0 && (
-                  <div className="candidate-models">
-                    {candidates[service.id].map(item => (
-                      <label key={item.modelId}>
-                        <input type="checkbox" onChange={event => {
-                          if (!event.target.checked) return;
-                          patchDraft(service.id, {
-                            models: [...drafts[service.id].models, {
-                              ...emptyModel(),
-                              modelId: item.modelId,
-                              displayName: item.displayName || item.modelId,
-                            }],
-                          });
+                  <div className="model-entry-list">
+                    {drafts[service.id].models.map((model, index) => (
+                      <div key={model.id || index} className="model-entry-row">
+                        <input value={model.modelId} placeholder="模型 ID" onChange={event => patchModel(service.id, index, { modelId: event.target.value })} />
+                        <input value={model.displayName} placeholder="显示名" onChange={event => patchModel(service.id, index, { displayName: event.target.value })} />
+                        <input defaultValue={formatTokens(model.contextTokens)} placeholder="上下文" onChange={event => {
+                          const value = parseTokens(event.target.value);
+                          if (Number.isFinite(value)) patchModel(service.id, index, { contextTokens: value });
                         }} />
-                        {item.displayName || item.modelId}
-                      </label>
+                        <input type="number" value={model.maxOutputTokens} onChange={event => patchModel(service.id, index, { maxOutputTokens: Number(event.target.value) })} />
+                        <select value={model.reasoning} onChange={event => patchModel(service.id, index, { reasoning: event.target.value as ModelEntryConfig['reasoning'] })}>
+                          <option value="low">低</option>
+                          <option value="medium">中</option>
+                          <option value="high">高</option>
+                        </select>
+                        <button type="button" onClick={() => patchDraft(service.id, { models: drafts[service.id].models.filter((_, i) => i !== index) })}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     ))}
                   </div>
-                )}
+
+                  <div className="model-entry-actions">
+                    <button type="button" onClick={() => patchDraft(service.id, { models: [...drafts[service.id].models, emptyModel()] })}>
+                      <Plus size={14} /> 添加模型
+                    </button>
+                    <button type="button" disabled={isBusy || discovering} onClick={() => void discoverNow(drafts[service.id], service.id)}>
+                      {discovering ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} 从服务端获取模型
+                    </button>
+                  </div>
+
+                  {candidates[service.id]?.length > 0 && (
+                    <div className="candidate-models">
+                      {candidates[service.id].map(item => (
+                        <label key={item.modelId}>
+                          <input type="checkbox" onChange={event => {
+                            if (!event.target.checked) return;
+                            patchDraft(service.id, {
+                              models: [...drafts[service.id].models, {
+                                ...emptyModel(),
+                                modelId: item.modelId,
+                                displayName: item.displayName || item.modelId,
+                              }],
+                            });
+                          }} />
+                          {item.displayName || item.modelId}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </details>
 
                 <footer className="model-edit-footer">
                   <button type="button" className="danger" onClick={() => {
                     if (window.confirm(`确认移除 ${service.displayName}？`) && void remove(service.id)) setExpanded(null);
-                  }}>移除服务</button>
+                  }}>移除</button>
                   <span>
+                    {service.apiKeyReady && (
+                      <button type="button" disabled={isBusy} onClick={() => void activate(service.id, service.models[0]?.modelId || '')}>
+                        <CheckCircle2 size={14} /> 设为当前助手
+                      </button>
+                    )}
                     <button type="button" onClick={() => setExpanded(null)}>取消</button>
                     <button type="button" className="primary" disabled={isBusy || discovering} onClick={() => void apply(drafts[service.id], service.id)}>
                       {isBusy ? '应用中…' : '应用'}
@@ -277,30 +308,59 @@ export default function ModelServicesPanel() {
             }
           }}
         >
-          <h3>自定义供应商</h3>
+          <h3>连接新助手</h3>
+          <p className="create-hint">第一步：选一家服务商；第二步：粘贴你的密钥。其余设置默认就好。</p>
+
+          {/* 选工具 */}
+          <label className="preset-select-label">选择服务商
+            <select
+              value={newDraft.vendor === 'Custom' ? 'custom' : newDraft.vendor}
+              onChange={event => setNewDraft(applyPreset(newDraft, event.target.value))}
+            >
+              {PRESET_PROVIDERS.map(item => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+
+          {/* 主区：名称 + 密钥 */}
           <div className="model-edit-grid">
-            <label>路由 ID<input value={newDraft.id} onChange={event => setNewDraft({ ...newDraft, id: event.target.value })} /></label>
-            <label>显示名<input value={newDraft.displayName} onChange={event => setNewDraft({ ...newDraft, displayName: event.target.value })} /></label>
-            <label>端点<input value={newDraft.baseUrl} onChange={event => setNewDraft({ ...newDraft, baseUrl: event.target.value })} /></label>
-            <label>API Key<input type="password" value={newDraft.apiKey} onChange={event => setNewDraft({ ...newDraft, apiKey: event.target.value })} /></label>
+            <label>助手名称
+              <input value={newDraft.displayName} placeholder="例如：我的 DeepSeek" onChange={event => setNewDraft({ ...newDraft, displayName: event.target.value })} />
+            </label>
+            <label>API Key（只写）
+              <input type="password" value={newDraft.apiKey} placeholder="粘贴你的密钥" onChange={event => setNewDraft({ ...newDraft, apiKey: event.target.value })} />
+            </label>
           </div>
-          {newDraft.models.map((model, index) => (
-            <div key={index} className="model-entry-row">
-              <input value={model.modelId} placeholder="模型 ID" onChange={event => setNewDraft({
-                ...newDraft,
-                models: newDraft.models.map((item, i) => i === index ? { ...item, modelId: event.target.value } : item),
-              })} />
-              <input value={model.displayName} placeholder="显示名" onChange={event => setNewDraft({
-                ...newDraft,
-                models: newDraft.models.map((item, i) => i === index ? { ...item, displayName: event.target.value } : item),
-              })} />
+
+          {/* 高级设置：路由 ID / 端点 / 协议 / 模型明细 */}
+          <details className="advanced-settings">
+            <summary>高级设置（端点、协议、模型）</summary>
+            <div className="model-edit-grid">
+              <label>路由 ID<input value={newDraft.id} onChange={event => setNewDraft({ ...newDraft, id: event.target.value })} /></label>
+              <label>端点<input value={newDraft.baseUrl} placeholder="https://" onChange={event => setNewDraft({ ...newDraft, baseUrl: event.target.value })} /></label>
             </div>
-          ))}
+            <div className="model-entry-list">
+              {newDraft.models.map((model, index) => (
+                <div key={index} className="model-entry-row">
+                  <input value={model.modelId} placeholder="模型 ID" onChange={event => setNewDraft({
+                    ...newDraft,
+                    models: newDraft.models.map((item, i) => i === index ? { ...item, modelId: event.target.value } : item),
+                  })} />
+                  <input value={model.displayName} placeholder="显示名" onChange={event => setNewDraft({
+                    ...newDraft,
+                    models: newDraft.models.map((item, i) => i === index ? { ...item, displayName: event.target.value } : item),
+                  })} />
+                </div>
+              ))}
+            </div>
+          </details>
+
           <footer className="model-edit-footer">
             <button type="button" onClick={() => setNewDraft(null)}>取消</button>
             <span>
-              <button type="button" className="primary" disabled={isBusy || !newDraft.id || !newDraft.baseUrl || !newDraft.models[0].modelId} onClick={() => void apply(newDraft)}>
-                {isBusy ? '创建中…' : '创建'}
+              <button type="button" className="primary" disabled={isBusy || !newDraft.id || !newDraft.apiKey || !newDraft.models[0].modelId} onClick={() => void apply(newDraft)}>
+                {isBusy ? '连接中…' : '连接'}
               </button>
             </span>
           </footer>
@@ -308,7 +368,7 @@ export default function ModelServicesPanel() {
       )}
 
       <div className="selected-model-hint">
-        {selectedModel ? <><CheckCircle2 size={14} /> 当前模型 {selectedModel}</> : <><Circle size={14} /> 未选择模型</>}
+        {selectedModel ? <><CheckCircle2 size={14} /> 当前助手 {selectedModel}</> : <><Circle size={14} /> 未选择助手</>}
       </div>
     </section>
   );

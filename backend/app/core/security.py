@@ -20,6 +20,7 @@ from .config import settings
 # 免鉴权路径前缀
 PUBLIC_PATHS = {
     "/health",
+    "/metrics",
     "/",
     "/docs",
     "/openapi.json",
@@ -27,6 +28,8 @@ PUBLIC_PATHS = {
     "/api/auth/register",
     "/api/auth/login",
     "/api/products",
+    "/api/analytics/events",
+    "/api/payments/stripe/webhook",
 }
 
 

@@ -93,12 +93,21 @@ class TestConfig:
         s = Settings(JUNE_DB_PATH="/data/custom.db")
         assert s.db_path == "/data/custom.db"
 
-    def test_validate_production_no_api_key(self):
-        """生产模式缺少 API Key 时报错"""
-        s = Settings(JUNE_ENV="production", DEEPSEEK_API_KEY="", LLM_API_KEY="", JUNE_API_TOKEN="")
+    def test_validate_production_allows_byok_without_global_api_key(self):
+        """生产模式允许用户自带模型密钥，不强制全局 LLM Key"""
+        s = Settings(
+            JUNE_ENV="production",
+            DEEPSEEK_API_KEY="",
+            LLM_API_KEY="",
+            JUNE_AUTH_SECRET="x" * 40,
+            JUNE_API_TOKEN="x" * 32,
+            JUNE_PAYMENT_PROVIDER="stripe",
+            JUNE_PUBLIC_BASE_URL="https://june.example.com",
+            JUNE_STRIPE_SECRET_KEY="sk_test_placeholder",
+            JUNE_STRIPE_WEBHOOK_SECRET="whsec_test_placeholder",
+        )
         errors = s.validate()
-        assert len(errors) >= 1
-        assert any("API Key" in e for e in errors)
+        assert errors == []
 
     def test_validate_development_no_errors(self):
         """开发模式允许缺少配置"""

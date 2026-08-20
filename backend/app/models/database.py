@@ -12,7 +12,20 @@ import time
 from pathlib import Path
 from contextlib import contextmanager
 from contextvars import ContextVar
-from sqlalchemy import Column, String, Integer, Text, Float, Boolean, ForeignKey, create_engine, inspect, text
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    Text,
+    Float,
+    Boolean,
+    ForeignKey,
+    ForeignKeyConstraint,
+    UniqueConstraint,
+    create_engine,
+    inspect,
+    text,
+)
 from sqlalchemy import event
 from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
@@ -125,7 +138,51 @@ class UserModel(Base):
     password_hash = Column(String(500), nullable=False)
     password_salt = Column(String(64), nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
+    is_disabled = Column(Boolean, nullable=False, default=False)
+    disabled_at = Column(Float, nullable=True)
+    disabled_reason = Column(String(300), nullable=False, default="")
     created_at = Column(Float, default=lambda: time.time())
+
+
+class LoginThrottleModel(Base):
+    """Persisted per-account/IP login limiter state."""
+    __tablename__ = "login_throttles"
+
+    key = Column(String(120), primary_key=True)
+    account = Column(String(255), nullable=False, default="", index=True)
+    failed_count = Column(Integer, nullable=False, default=0)
+    window_started_at = Column(Float, nullable=False, default=0)
+    locked_until = Column(Float, nullable=True)
+    updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
+
+
+class AuditLogModel(Base):
+    """Immutable operator/action trail for administrator and security events."""
+    __tablename__ = "audit_logs"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    actor_id = Column(String(36), nullable=False, default="", index=True)
+    actor_account = Column(String(255), nullable=False, default="")
+    action = Column(String(80), nullable=False, index=True)
+    target_type = Column(String(40), nullable=False, default="")
+    target_id = Column(String(120), nullable=False, default="")
+    ip = Column(String(64), nullable=False, default="")
+    user_agent = Column(String(300), nullable=False, default="")
+    detail_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(Float, default=lambda: time.time(), index=True)
+
+
+class AnalyticsEventModel(Base):
+    """First-party, privacy-limited product event stream."""
+    __tablename__ = "analytics_events"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    event_name = Column(String(60), nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, default="", index=True)
+    route = Column(String(120), nullable=False, default="")
+    session_id = Column(String(80), nullable=False, default="")
+    properties_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(Float, default=lambda: time.time(), index=True)
 
 
 class ProductModel(Base):
@@ -152,7 +209,8 @@ class OrderModel(Base):
     path_count = Column(Integer, nullable=False)
     status = Column(String(20), nullable=False, default="pending", index=True)
     provider = Column(String(30), nullable=False, default="sandbox")
-    provider_order_id = Column(String(120), nullable=False, default="")
+    provider_order_id = Column(String(120), nullable=False, default="", index=True)
+    payment_url = Column(String(1000), nullable=False, default="")
     provider_transaction_id = Column(String(180), nullable=False, default="", index=True)
     paid_at = Column(Float, nullable=True)
     created_at = Column(Float, default=lambda: time.time())
@@ -193,7 +251,7 @@ class ModelServiceModel(Base):
     __tablename__ = "model_services"
 
     id = Column(String(60), primary_key=True)
-    owner_id = Column(String(36), nullable=False, index=True)
+    owner_id = Column(String(36), primary_key=True)
     display_name = Column(String(120), nullable=False)
     vendor = Column(String(80), nullable=False, default="")
     base_url = Column(String(500), nullable=False)
@@ -217,7 +275,8 @@ class ModelEntryModel(Base):
     __tablename__ = "model_entries"
 
     id = Column(String(36), primary_key=True, default=gen_id)
-    service_id = Column(String(60), ForeignKey("model_services.id", ondelete="CASCADE"), nullable=False, index=True)
+    service_owner_id = Column(String(36), primary_key=True)
+    service_id = Column(String(60), primary_key=True)
     model_id = Column(String(160), nullable=False)
     display_name = Column(String(160), nullable=False, default="")
     context_tokens = Column(Integer, nullable=False, default=128000)
@@ -226,6 +285,28 @@ class ModelEntryModel(Base):
     created_at = Column(Float, default=lambda: time.time())
 
     service = relationship("ModelServiceModel", back_populates="models")
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["service_owner_id", "service_id"],
+            ["model_services.owner_id", "model_services.id"],
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint("service_owner_id", "service_id", "model_id", name="uq_model_entries_owner_route_model"),
+    )
+
+
+class PaymentEventModel(Base):
+    """Provider callback trail used for reconciliation and replay diagnostics."""
+    __tablename__ = "payment_events"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    provider = Column(String(30), nullable=False)
+    event_type = Column(String(80), nullable=False)
+    provider_event_id = Column(String(180), nullable=False, default="", index=True)
+    order_id = Column(String(36), nullable=False, default="", index=True)
+    payload_json = Column(Text, nullable=False, default="{}")
+    received_at = Column(Float, default=lambda: time.time(), index=True)
 
 
 class MvpRunModel(Base):
@@ -352,11 +433,73 @@ def _migrate_sqlite(engine) -> None:
                 connection.execute(text("ALTER TABLE users ADD COLUMN identity VARCHAR(80) NOT NULL DEFAULT ''"))
             if "is_admin" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+            if "is_disabled" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT 0"))
+            if "disabled_at" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN disabled_at FLOAT"))
+            if "disabled_reason" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN disabled_reason VARCHAR(300) NOT NULL DEFAULT ''"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_users_identity ON users (identity)"))
+    if "orders" in inspector.get_table_names():
+        order_columns = {column["name"] for column in inspector.get_columns("orders")}
+        with engine.begin() as connection:
+            if "payment_url" not in order_columns:
+                connection.execute(text("ALTER TABLE orders ADD COLUMN payment_url VARCHAR(1000) NOT NULL DEFAULT ''"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_provider_order_id ON orders (provider_order_id)"))
     columns = {column["name"] for column in inspector.get_columns("installed_skills")}
     if "encrypted_api_key" not in columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE installed_skills ADD COLUMN encrypted_api_key TEXT NOT NULL DEFAULT ''"))
+    if "model_services" in inspector.get_table_names():
+        service_pk = tuple(inspector.get_pk_constraint("model_services")["constrained_columns"])
+        if service_pk != ("id", "owner_id"):
+            _rebuild_model_service_tables(engine)
+
+
+def _rebuild_model_service_tables(engine) -> None:
+    """Convert the legacy global service PK to (owner_id, id) without dropping user data."""
+    connection = engine.connect().execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+        with connection.begin():
+            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_model_services_owner_id")
+            connection.exec_driver_sql("DROP INDEX IF EXISTS ix_model_entries_service_id")
+            connection.exec_driver_sql("ALTER TABLE model_services RENAME TO model_services_legacy")
+            connection.exec_driver_sql("ALTER TABLE model_entries RENAME TO model_entries_legacy")
+            ModelServiceModel.__table__.create(connection)
+            ModelEntryModel.__table__.create(connection)
+            connection.exec_driver_sql(
+                """
+                INSERT INTO model_services (
+                    id, owner_id, display_name, vendor, base_url, protocol,
+                    encrypted_api_key, api_key_ready, version, created_at, updated_at
+                )
+                SELECT
+                    id, owner_id, display_name, vendor, base_url, protocol,
+                    encrypted_api_key, api_key_ready, version, created_at, updated_at
+                FROM model_services_legacy
+                """
+            )
+            connection.exec_driver_sql(
+                """
+                INSERT INTO model_entries (
+                    id, service_owner_id, service_id, model_id, display_name,
+                    context_tokens, max_output_tokens, reasoning, created_at
+                )
+                SELECT
+                    legacy.id, services.owner_id, legacy.service_id, legacy.model_id,
+                    legacy.display_name, legacy.context_tokens, legacy.max_output_tokens,
+                    legacy.reasoning, legacy.created_at
+                FROM model_entries_legacy AS legacy
+                JOIN model_services_legacy AS services ON services.id = legacy.service_id
+                """
+            )
+            connection.exec_driver_sql("DROP TABLE model_entries_legacy")
+            connection.exec_driver_sql("DROP TABLE model_services_legacy")
+    finally:
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        connection.close()
 
 
 def get_session(db_path: str) -> Session:
@@ -396,6 +539,21 @@ def request_db_scope(db_path: str):
         _request_session.reset(token)
         session.rollback()
         session.close()
+
+
+class RequestSessionMiddleware:
+    """Keep one request-scoped database session alive through SSE response bodies."""
+
+    def __init__(self, app, db_path: str):
+        self.app = app
+        self.db_path = db_path
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        with request_db_scope(self.db_path):
+            await self.app(scope, receive, send)
 
 
 def get_request_scoped_session() -> RequestScopedSession:

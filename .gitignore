@@ -4,6 +4,7 @@ node_modules/
 __pycache__/
 *.pyc
 dist/
+frontend/test-results/
 
 # ——— 环境变量 ———
 .env
@@ -15,10 +16,18 @@ dist/
 *.db-journal
 *.db-wal
 *.db-shm
+backend/backups/
 
 # ——— 日志 ———
 *.log
 backend/backend.log
+backend/logs/
+deploy/certs/
+deploy/runtime/
+deploy/nginx/logs/
+deploy/nginx/*.log
+deploy/nginx/nginx.pid
+deploy/nginx/temp/
 
 # ——— IDE / OS ———
 .idea/

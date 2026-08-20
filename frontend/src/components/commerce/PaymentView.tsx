@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AlertTriangle, ArrowRight, CreditCard, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CreditCard, ExternalLink, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
 import type { SiteLanguage } from './SiteHeader';
 
@@ -12,6 +12,8 @@ const copy = {
     pay: '付款',
     paying: '正在确认到账',
     callback: '点击「付款」即模拟现金到账信号，后端确认支付后会自动跳转到购买成功页。',
+    realCallback: '在新窗口完成 Stripe 支付。支付回调确认后，此页会自动进入成功页。',
+    refresh: '我已完成支付',
     noOrder: '当前没有待支付订单',
     alreadyPaid: '该订单已支付',
     goBuy: '去购买',
@@ -26,6 +28,8 @@ const copy = {
     pay: 'Pay',
     paying: 'Confirming payment',
     callback: 'Click “Pay” to simulate a cash-received signal; the backend confirms and redirects to the success page.',
+    realCallback: 'Complete Stripe payment in the new window. This page advances automatically after the signed callback.',
+    refresh: 'I have paid',
     noOrder: 'No pending order',
     alreadyPaid: 'This order is already paid',
     goBuy: 'Go to buy',
@@ -41,6 +45,7 @@ export default function PaymentView({ language }: { language: SiteLanguage }) {
   const isBusy = useCommerceStore(s => s.isBusy);
   const error = useCommerceStore(s => s.error);
   const confirmOrder = useCommerceStore(s => s.confirmOrder);
+  const refreshOrderStatus = useCommerceStore(s => s.refreshOrderStatus);
   const clearError = useCommerceStore(s => s.clearError);
   const dismissOrder = useCommerceStore(s => s.dismissOrder);
   const text = copy[language];
@@ -55,11 +60,21 @@ export default function PaymentView({ language }: { language: SiteLanguage }) {
     }
   }, [coachStatus?.paid, lastOrder?.status]);
 
+  useEffect(() => {
+    if (!hasPending || !lastOrder?.paymentUrl) return;
+    const timer = window.setInterval(() => {
+      void refreshOrderStatus();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [hasPending, lastOrder?.id, lastOrder?.paymentUrl, refreshOrderStatus]);
+
   const handlePay = async () => {
     if (!lastOrder) return;
+    if (lastOrder.paymentUrl) {
+      window.open(lastOrder.paymentUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
     // 沙箱模拟：以商户单号生成沙箱流水号，等同于支付渠道回传的支付成功信号。
-    // 接入真实支付时，由支付渠道回调 /api/orders/{id}/confirm（带签名）置为已支付，
-    // 本页与成功页逻辑完全复用，无需改动。
     const txId = `SANDBOX-${lastOrder.providerOrderId}`;
     await confirmOrder(txId);
     if (useCommerceStore.getState().lastOrder?.status === 'paid') {
@@ -109,18 +124,32 @@ export default function PaymentView({ language }: { language: SiteLanguage }) {
               </div>
             </dl>
 
-            <button
-              type="button"
-              className="coach-primary-button w-full mt-5"
-              disabled={isBusy || !user}
-              onClick={() => void handlePay()}
-            >
-              {isBusy && <Loader2 size={15} className="animate-spin" />}
-              {isBusy ? text.paying : text.pay}
-            </button>
+            <div className="flex flex-col gap-2 mt-5">
+              <button
+                type="button"
+                className="coach-primary-button w-full"
+                disabled={isBusy || !user}
+                onClick={() => void handlePay()}
+              >
+                {isBusy && <Loader2 size={15} className="animate-spin" />}
+                {lastOrder.paymentUrl ? <ExternalLink size={15} /> : null}
+                {isBusy ? text.paying : text.pay}
+              </button>
+              {lastOrder.paymentUrl && (
+                <button
+                  type="button"
+                  className="coach-secondary-button w-full"
+                  disabled={isBusy}
+                  onClick={() => void refreshOrderStatus()}
+                >
+                  <RefreshCw size={14} />
+                  {text.refresh}
+                </button>
+              )}
+            </div>
 
             <p className="home-pricing-note mt-3 flex items-center gap-1">
-              <ShieldCheck size={13} />{text.callback}
+              <ShieldCheck size={13} />{lastOrder.paymentUrl ? text.realCallback : text.callback}
             </p>
 
             {error && (

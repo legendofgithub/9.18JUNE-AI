@@ -18,7 +18,9 @@ from app.models.schemas import FollowUpRequest
 from app.repositories.commerce_repo import CommerceRepository
 from app.repositories.session_repo import SessionRepository
 from app.routes.auth import router as auth_router
+from app.routes.admin import router as admin_router
 from app.routes.commerce import router as commerce_router
+from app.services.admin_service import AdminService
 from app.services.auth_service import AuthService
 from app.services.commerce_service import CommerceService
 from app.services.mvp_service import MvpService
@@ -78,8 +80,11 @@ def make_client(tmp_path):
     ))
     app.include_router(auth_router, prefix="/api")
     app.include_router(commerce_router, prefix="/api")
+    app.include_router(admin_router, prefix="/api")
     app.state.auth_service = AuthService(repo)
+    app.state.commerce_repo = repo
     app.state.commerce_service = CommerceService(repo, llm)
+    app.state.admin_service = AdminService(repo, app.state.auth_service)
     app.state.mvp_service = MvpService(repo, SessionRepository(db), llm, None)
     return TestClient(app), db, engine, llm
 

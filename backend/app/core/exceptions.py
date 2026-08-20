@@ -35,6 +35,20 @@ class ValidationException(JuneException):
         super().__init__(message=message, code=400)
 
 
+class ForbiddenException(JuneException):
+    """已登录但无权限 (403)"""
+
+    def __init__(self, message: str = "没有权限执行此操作"):
+        super().__init__(message=message, code=403)
+
+
+class RateLimitException(JuneException):
+    """触发限流 (429)"""
+
+    def __init__(self, message: str = "请求过于频繁，请稍后再试"):
+        super().__init__(message=message, code=429)
+
+
 class ServiceException(JuneException):
     """外部服务异常 (502)"""
 

@@ -8,22 +8,25 @@ from app.core.config import settings
 
 
 class TestDeepSeekService:
-    def test_env_key(self):
+    def test_env_key(self, monkeypatch):
         svc = DeepSeekService(); svc._api_key = None
-        with patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'sk-env'}):
-            with patch.object(settings, 'DEEPSEEK_API_KEY', ''), patch.object(settings, 'LLM_API_KEY', ''):
-                assert svc.get_api_key() == 'sk-env'
+        monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-env')
+        monkeypatch.setattr(settings, 'DEEPSEEK_API_KEY', '')
+        monkeypatch.setattr(settings, 'LLM_API_KEY', '')
+        assert svc.get_api_key() == 'sk-env'
 
-    def test_memory_over_env(self):
+    def test_memory_over_env(self, monkeypatch):
         svc = DeepSeekService(); svc._api_key = 'sk-mem'
-        with patch.dict('os.environ', {'DEEPSEEK_API_KEY': 'sk-env'}):
-            assert svc.get_api_key() == 'sk-mem'
+        monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-env')
+        assert svc.get_api_key() == 'sk-mem'
 
-    def test_empty_key(self):
+    def test_empty_key(self, monkeypatch):
         svc = DeepSeekService(); svc._api_key = None
-        with patch.dict('os.environ', {}, clear=True):
-            with patch.object(settings, 'DEEPSEEK_API_KEY', ''), patch.object(settings, 'LLM_API_KEY', ''):
-                assert svc.get_api_key() == ''
+        monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+        monkeypatch.delenv('LLM_API_KEY', raising=False)
+        monkeypatch.setattr(settings, 'DEEPSEEK_API_KEY', '')
+        monkeypatch.setattr(settings, 'LLM_API_KEY', '')
+        assert svc.get_api_key() == ''
 
     def test_set_key(self):
         svc = DeepSeekService(); svc.set_api_key('sk-new')
@@ -42,13 +45,15 @@ class TestDeepSeekService:
         assert DeepSeekService().BASE_URL == settings.llm_base_url
 
     @pytest.mark.asyncio
-    async def test_mock_reply(self):
+    async def test_mock_reply(self, monkeypatch):
         svc = DeepSeekService(); svc._api_key = None
-        with patch.dict('os.environ', {}, clear=True):
-            with patch.object(settings, 'DEEPSEEK_API_KEY', ''), patch.object(settings, 'LLM_API_KEY', ''):
-                with patch.object(type(settings), 'is_production', new_callable=lambda: property(lambda self: False)):
-                    chunks = [c async for c in svc.chat(messages=[{"role": "user", "content": "?"}], api_key="")]
-                    assert len(''.join(chunks)) > 10
+        monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+        monkeypatch.delenv('LLM_API_KEY', raising=False)
+        monkeypatch.setattr(settings, 'DEEPSEEK_API_KEY', '')
+        monkeypatch.setattr(settings, 'LLM_API_KEY', '')
+        with patch.object(type(settings), 'is_production', new_callable=lambda: property(lambda self: False)):
+            chunks = [c async for c in svc.chat(messages=[{"role": "user", "content": "?"}], api_key="")]
+            assert len(''.join(chunks)) > 10
 
     @pytest.mark.asyncio
     async def test_real_api(self):

@@ -13,24 +13,31 @@ import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
 from .core.config import settings
 from .core.exceptions import JuneException
+from .core.observability import ObservabilityMiddleware, RuntimeMetrics
 from .core.security import TokenAuthMiddleware, ensure_token
-from .models.database import get_request_scoped_session, init_db, request_db_scope
+from .models.database import (
+    RequestSessionMiddleware,
+    get_request_scoped_session,
+    init_db,
+    request_db_scope,
+)
 from .repositories import SessionRepository
 from .repositories.commerce_repo import CommerceRepository
 from .services import SessionService
+from .services.admin_service import AdminService
 from .services.auth_service import AuthService
 from .services.commerce_service import CommerceService
 from .services.mvp_service import MvpService
 from .services.deepseek import DeepSeekService
 from .thread_manager import thread_manager
-from .routes import auth, commerce, sessions, models
+from .routes import admin, auth, commerce, sessions, models
 
 
 @asynccontextmanager
@@ -71,10 +78,11 @@ async def lifespan(app: FastAPI):
     app.state.session_service = SessionService(session_repo, deepseek_service, thread_manager)
     app.state.deepseek_service = deepseek_service
     app.state.db_session = db_session
+    app.state.commerce_repo = commerce_repo
     app.state.auth_service = AuthService(commerce_repo)
     app.state.commerce_service = CommerceService(commerce_repo, deepseek_service)
+    app.state.admin_service = AdminService(commerce_repo, app.state.auth_service)
     app.state.mvp_service = MvpService(commerce_repo, session_repo, deepseek_service, thread_manager)
-
     # 启动 ThreadManager
     await thread_manager.start_cleanup(interval=settings.THREAD_CLEANUP_INTERVAL)
     print(f"[June] ThreadManager 已启动（空闲超时: {thread_manager._idle_timeout}s）")
@@ -102,6 +110,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.runtime_metrics = RuntimeMetrics()
+
+app.add_middleware(RequestSessionMiddleware, db_path=settings.db_path)
+
 # ── 中间件 ──
 
 # CORS（来源从配置读取，不再硬编码通配符）
@@ -115,6 +127,7 @@ app.add_middleware(
 
 # Token 鉴权（开发模式自动生成 token，生产模式从 .env 读取）
 app.add_middleware(TokenAuthMiddleware)
+app.add_middleware(ObservabilityMiddleware, metrics=app.state.runtime_metrics)
 
 # ── 全局异常处理 ──
 
@@ -151,18 +164,11 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # ── 注册路由 ──
 
-async def request_database_scope():
-    with request_db_scope(settings.db_path):
-        yield
-
-
-db_dependency = [Depends(request_database_scope)]
-
-
-app.include_router(sessions.router, prefix="/api", dependencies=db_dependency)
-app.include_router(models.router, prefix="/api", dependencies=db_dependency)
-app.include_router(auth.router, prefix="/api", dependencies=db_dependency)
-app.include_router(commerce.router, prefix="/api", dependencies=db_dependency)
+app.include_router(sessions.router, prefix="/api")
+app.include_router(models.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(commerce.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 
 # ── 公开端点 ──
@@ -191,6 +197,7 @@ async def health():
         "status": "healthy" if db_status == "connected" else "degraded",
         "db": db_status,
         "active_threads": thread_manager.active_count(),
+        "metrics": app.state.runtime_metrics.snapshot(),
     }
 
 

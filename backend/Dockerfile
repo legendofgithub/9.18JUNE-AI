@@ -16,7 +16,7 @@ RUN useradd -m -u 1000 june && chown -R june:june /app
 USER june
 
 # 创建数据目录并设置权限
-RUN mkdir -p /data && chown june:june /data
+RUN mkdir -p /data /backups && chown june:june /data /backups
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1

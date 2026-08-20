@@ -1,0 +1,54 @@
+services:
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/production.conf:/etc/nginx/nginx.conf:ro
+      - ${JUNE_TLS_CERT:-./deploy/certs/june-local.crt}:/etc/nginx/tls/tls.crt:ro
+      - ${JUNE_TLS_KEY:-./deploy/certs/june-local.key}:/etc/nginx/tls/tls.key:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      june-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  june-api:
+    environment:
+      - JUNE_ENV=production
+      - JUNE_DB_PATH=/data/june.db
+      - JUNE_LOG_PATH=/data/logs
+      - JUNE_PUBLIC_BASE_URL=${JUNE_PUBLIC_BASE_URL:-https://localhost}
+      - JUNE_PAYMENT_PROVIDER=${JUNE_PAYMENT_PROVIDER:-stripe}
+    volumes:
+      - june-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  june-backup:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "scripts/backup.py", "--loop", "--interval-seconds", "${JUNE_BACKUP_INTERVAL_SECONDS:-86400}"]
+    environment:
+      - JUNE_DB_PATH=/data/june.db
+      - JUNE_BACKUP_DIR=/backups
+      - JUNE_BACKUP_RETENTION=${JUNE_BACKUP_RETENTION:-14}
+    volumes:
+      - june-data:/data:ro
+      - june-backups:/backups
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  june-data:
+    driver: local
+  june-backups:
+    driver: local

@@ -20,7 +20,14 @@ async def register(body: RegisterRequest, request: Request):
 
 @router.post("/login")
 async def login(body: LoginRequest, request: Request):
-    result = request.app.state.auth_service.login(body.account, body.password)
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = (forwarded.split(",")[0].strip() if forwarded else "") or (request.client.host if request.client else "")
+    result = request.app.state.auth_service.login(
+        body.account,
+        body.password,
+        ip=ip,
+        user_agent=request.headers.get("user-agent", ""),
+    )
     return success(result, "登录成功")
 
 

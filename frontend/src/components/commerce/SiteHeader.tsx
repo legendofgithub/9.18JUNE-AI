@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Globe, LogIn, LogOut, Route, ShieldCheck, UserRound } from 'lucide-react';
+import { Globe, LayoutDashboard, LogIn, LogOut, Route, ShieldCheck, UserRound } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
 
 export type SiteLanguage = 'zh' | 'en';
-export type SiteRoute = 'home' | 'product' | 'payment' | 'success' | 'studio';
+export type SiteRoute = 'home' | 'product' | 'payment' | 'success' | 'studio' | 'admin';
 
 interface SiteHeaderProps {
   language: SiteLanguage;
@@ -27,6 +27,7 @@ const copy = {
     history: '已购买历史',
     emptyHistory: '暂无购买记录',
     admin: '管理员',
+    adminConsole: '管理后台',
   },
   en: {
     products: 'Products',
@@ -43,6 +44,7 @@ const copy = {
     history: 'Purchase history',
     emptyHistory: 'No purchases yet',
     admin: 'Admin',
+    adminConsole: 'Admin console',
   },
 };
 
@@ -107,7 +109,7 @@ export default function SiteHeader({ language, onLanguageChange, route }: SiteHe
           ) : (
             <>
               <a href="#/">{text.home}</a>
-              <span className="site-nav-current">{text.studio}</span>
+              <span className="site-nav-current">{route === 'admin' ? text.adminConsole : text.studio}</span>
             </>
           )}
         </nav>
@@ -170,6 +172,12 @@ export default function SiteHeader({ language, onLanguageChange, route }: SiteHe
                   </ul>
                 ) : (
                   <p className="site-history-empty">{text.emptyHistory}</p>
+                )}
+                {user.isAdmin && (
+                  <a className="site-admin-console-link" href="#/admin">
+                    <LayoutDashboard size={13} />
+                    {text.adminConsole}
+                  </a>
                 )}
                 <button type="button" className="site-popover-logout" onClick={logout}>
                   <LogOut size={13} />

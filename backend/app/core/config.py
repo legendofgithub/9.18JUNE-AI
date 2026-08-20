@@ -49,10 +49,21 @@ class Settings(BaseSettings):
     JUNE_ADMIN_DISPLAY_NAME: str = "Tony"
     JUNE_ADMIN_PASSWORD: str = ""
 
+    # ---- 登录限流 ----
+    JUNE_LOGIN_MAX_ATTEMPTS: int = 5
+    JUNE_LOGIN_WINDOW_SECONDS: int = 900
+    JUNE_LOGIN_LOCKOUT_SECONDS: int = 900
+
     # ---- 支付 ----
     # sandbox 用于本机联调；production 必须接入签名回调，避免客户端伪造支付
     JUNE_PAYMENT_PROVIDER: str = "sandbox"
     JUNE_PAYMENT_CALLBACK_SECRET: str = ""
+    JUNE_PUBLIC_BASE_URL: str = ""
+    JUNE_STRIPE_SECRET_KEY: str = ""
+    JUNE_STRIPE_WEBHOOK_SECRET: str = ""
+
+    # ---- 观测 ----
+    JUNE_LOG_PATH: str = ""
 
     # ---- SSE 配置 ----
     SSE_HEARTBEAT_INTERVAL: int = 15
@@ -99,17 +110,28 @@ class Settings(BaseSettings):
         """启动时校验：生产模式强制检查必填项"""
         errors: list[str] = []
         if self.is_production:
-            if not self.llm_api_key:
-                errors.append("未设置 API Key（LLM_API_KEY 或 DEEPSEEK_API_KEY），生产模式必须提供")
             if not self.JUNE_AUTH_SECRET or len(self.JUNE_AUTH_SECRET) < 32:
                 errors.append("JUNE_AUTH_SECRET 未设置或长度不足（至少 32 字符）")
             if self.JUNE_PAYMENT_PROVIDER == "sandbox":
                 errors.append("生产模式不能使用 sandbox 支付，请配置正式支付通道")
-            if not self.JUNE_PAYMENT_CALLBACK_SECRET:
-                errors.append("JUNE_PAYMENT_CALLBACK_SECRET 未设置，支付回调无法验证")
+            if self.JUNE_PAYMENT_PROVIDER == "stripe":
+                if not self.JUNE_PUBLIC_BASE_URL.startswith("https://"):
+                    errors.append("JUNE_PUBLIC_BASE_URL 必须是 HTTPS 地址")
+                if not self.JUNE_STRIPE_SECRET_KEY:
+                    errors.append("JUNE_STRIPE_SECRET_KEY 未设置，无法创建 Stripe 支付")
+                if not self.JUNE_STRIPE_WEBHOOK_SECRET:
+                    errors.append("JUNE_STRIPE_WEBHOOK_SECRET 未设置，无法验证支付回调")
             if not self.JUNE_API_TOKEN or len(self.JUNE_API_TOKEN) < 16:
                 errors.append("JUNE_API_TOKEN 未设置或长度不足（至少 16 字符），生产模式必须提供安全 Token")
         return errors
+
+    @property
+    def log_path(self) -> str:
+        if self.JUNE_LOG_PATH:
+            return self.JUNE_LOG_PATH
+        if self.is_production:
+            return "/data/logs"
+        return str(Path(__file__).resolve().parent.parent.parent / "logs")
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

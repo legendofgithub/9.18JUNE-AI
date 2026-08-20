@@ -27,7 +27,17 @@ def test_model_base_url_rejects_metadata_and_private_addresses():
             validate_model_base_url(url)
 
 
-def test_model_base_url_allows_loopback_only_in_development():
+def test_model_base_url_allows_loopback_only_in_development(monkeypatch):
+    import socket
+
+    real_getaddrinfo = socket.getaddrinfo
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        if host == "localhost":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0))]
+        return real_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
     assert validate_model_base_url("http://localhost:8001/v1/") == "http://localhost:8001/v1"
 
 

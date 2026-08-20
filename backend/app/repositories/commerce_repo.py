@@ -9,12 +9,16 @@ from sqlalchemy.orm import Session
 
 from ..core.exceptions import JuneException, NotFoundException, ValidationException
 from ..models.database import (
+    AnalyticsEventModel,
+    AuditLogModel,
     EntitlementModel,
     InstalledSkillModel,
+    LoginThrottleModel,
     MvpRunModel,
     ModelEntryModel,
     ModelServiceModel,
     OrderModel,
+    PaymentEventModel,
     ProductModel,
     RunArtifactModel,
     RunEventModel,
@@ -161,6 +165,95 @@ class CommerceRepository:
             return None
         return user
 
+    def list_users(self, search: str = "") -> list[UserModel]:
+        query = self.db.query(UserModel).order_by(UserModel.created_at.desc())
+        keyword = search.strip().lower()
+        if keyword:
+            like = f"%{keyword}%"
+            query = query.filter(
+                UserModel.email.like(like)
+                | UserModel.identity.like(like)
+                | UserModel.display_name.like(like)
+            )
+        return query.all()
+
+    def set_user_disabled(self, user_id: str, disabled: bool, reason: str = "") -> UserModel:
+        user = self.get_user_by_id(user_id)
+        if user is None:
+            raise NotFoundException("用户不存在")
+        if user.is_admin and disabled:
+            raise ValidationException("不能禁用管理员账号")
+        user.is_disabled = disabled
+        user.disabled_at = time.time() if disabled else None
+        user.disabled_reason = reason.strip()[:300] if disabled else ""
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def get_login_throttle(self, key: str, account: str = "") -> LoginThrottleModel:
+        throttle = self.db.get(LoginThrottleModel, key)
+        if throttle is None:
+            throttle = LoginThrottleModel(key=key, account=account[:255])
+            self.db.add(throttle)
+        throttle.account = account[:255]
+        return throttle
+
+    def reset_login_throttle(self, key: str) -> None:
+        throttle = self.db.get(LoginThrottleModel, key)
+        if throttle is not None:
+            self.db.delete(throttle)
+            self.db.commit()
+
+    def clear_login_throttles(self, account: str) -> int:
+        normalized = account.strip().lower()
+        throttles = self.db.query(LoginThrottleModel).filter(LoginThrottleModel.account == normalized).all()
+        for throttle in throttles:
+            self.db.delete(throttle)
+        self.db.commit()
+        return len(throttles)
+
+    def record_login_failure(self, key: str, max_attempts: int, window_seconds: int, lockout_seconds: int) -> tuple[int, float]:
+        now = time.time()
+        throttle = self.get_login_throttle(key)
+        if throttle.window_started_at == 0 or now - throttle.window_started_at > window_seconds:
+            throttle.failed_count = 0
+            throttle.window_started_at = now
+        throttle.failed_count += 1
+        if throttle.failed_count >= max_attempts:
+            throttle.locked_until = now + lockout_seconds
+            throttle.failed_count = 0
+            throttle.window_started_at = now
+        throttle.updated_at = now
+        self.db.commit()
+        locked_until = throttle.locked_until or 0
+        return throttle.failed_count, locked_until
+
+    def add_audit(
+        self,
+        actor_id: str,
+        actor_account: str,
+        action: str,
+        target_type: str = "",
+        target_id: str = "",
+        ip: str = "",
+        user_agent: str = "",
+        detail: dict | None = None,
+    ) -> None:
+        self.db.add(AuditLogModel(
+            actor_id=actor_id,
+            actor_account=actor_account[:255],
+            action=action[:80],
+            target_type=target_type[:40],
+            target_id=target_id[:120],
+            ip=ip[:64],
+            user_agent=user_agent[:300],
+            detail_json=json.dumps(detail or {}, ensure_ascii=False, separators=(",", ":")),
+        ))
+        self.db.commit()
+
+    def list_audit_logs(self, limit: int = 100) -> list[AuditLogModel]:
+        return self.db.query(AuditLogModel).order_by(AuditLogModel.created_at.desc()).limit(limit).all()
+
     def create_order(self, owner_id: str, product: ProductModel, provider: str) -> OrderModel:
         order = OrderModel(
             owner_id=owner_id,
@@ -175,6 +268,40 @@ class CommerceRepository:
         self.db.refresh(order)
         return order
 
+    def attach_payment_session(self, order: OrderModel, provider_order_id: str, payment_url: str) -> OrderModel:
+        order.provider_order_id = provider_order_id
+        order.payment_url = payment_url
+        self.db.commit()
+        self.db.refresh(order)
+        return order
+
+    def get_order_by_provider_id(self, provider_order_id: str) -> Optional[OrderModel]:
+        return (
+            self.db.query(OrderModel)
+            .filter(OrderModel.provider_order_id == provider_order_id)
+            .first()
+        )
+
+    def get_order_unscoped(self, order_id: str) -> Optional[OrderModel]:
+        return self.db.get(OrderModel, order_id)
+
+    def add_payment_event(
+        self,
+        provider: str,
+        event_type: str,
+        provider_event_id: str,
+        order_id: str,
+        payload: dict,
+    ) -> None:
+        self.db.add(PaymentEventModel(
+            provider=provider,
+            event_type=event_type,
+            provider_event_id=provider_event_id[:180],
+            order_id=order_id,
+            payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        ))
+        self.db.commit()
+
     def get_order(self, owner_id: str, order_id: str) -> OrderModel:
         order = self.db.get(OrderModel, order_id)
         if order is None or order.owner_id != owner_id:
@@ -188,6 +315,9 @@ class CommerceRepository:
             .order_by(OrderModel.created_at.desc())
             .all()
         )
+
+    def list_all_orders(self, limit: int = 100) -> list[OrderModel]:
+        return self.db.query(OrderModel).order_by(OrderModel.created_at.desc()).limit(limit).all()
 
     def has_paid_order(self, owner_id: str) -> bool:
         return (
@@ -208,6 +338,29 @@ class CommerceRepository:
         self._grant_paths(order.owner_id, order.path_count)
         self.db.commit()
         return True
+
+    def add_analytics_event(
+        self,
+        event_name: str,
+        owner_id: str,
+        route: str,
+        session_id: str,
+        properties: dict,
+    ) -> None:
+        self.db.add(AnalyticsEventModel(
+            event_name=event_name,
+            owner_id=owner_id,
+            route=route[:120],
+            session_id=session_id[:80],
+            properties_json=json.dumps(properties, ensure_ascii=False, separators=(",", ":")),
+        ))
+        self.db.commit()
+
+    def count_analytics_events(self, name: str | None = None) -> int:
+        query = self.db.query(AnalyticsEventModel)
+        if name:
+            query = query.filter(AnalyticsEventModel.event_name == name)
+        return query.count()
 
     def _grant_paths(self, owner_id: str, path_count: int) -> None:
         entitlement = self.get_entitlement(owner_id, create=False)
@@ -261,8 +414,8 @@ class CommerceRepository:
         )
 
     def get_model_service(self, owner_id: str, service_id: str) -> ModelServiceModel:
-        service = self.db.get(ModelServiceModel, service_id)
-        if service is None or service.owner_id != owner_id:
+        service = self.db.get(ModelServiceModel, {"id": service_id, "owner_id": owner_id})
+        if service is None:
             raise NotFoundException("模型服务不存在")
         return service
 

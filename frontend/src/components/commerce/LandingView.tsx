@@ -4,11 +4,14 @@ import {
   ArrowRight,
   BadgeCheck,
   CreditCard,
+  ExternalLink,
   Loader2,
   Sparkles,
   Target,
 } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
+import { COMMUNITY_URL } from '../../config';
+import { QRCodeSVG } from 'qrcode.react';
 import type { SiteLanguage } from './SiteHeader';
 import AuthView from './AuthView';
 
@@ -39,6 +42,7 @@ const copy = {
     transaction: '沙箱流水号',
     confirm: '确认到账',
     callback: '支付完成后即可启动超级个体训练师。',
+    payOnline: '打开 Stripe 支付',
     aboutTitle: '关于我们',
     about: 'OPC 团队能在这条路上受益，靠的不是赌对了什么，而是顺势借到了一股时代大势所趋——AI 正在把创造与变现的能力交回给每一个普通人。我们只是把超级个体的能力沉淀成可复制的训练流程，被这股大势托着往前走；愿意参与、愿意行动的个体，也自然会被它一并托起。',
     stats: [
@@ -73,6 +77,7 @@ const copy = {
     transaction: 'Sandbox transaction ID',
     confirm: 'Confirm payment',
     callback: 'Start the Super-Solo Coach after payment succeeds.',
+    payOnline: 'Open Stripe Checkout',
     aboutTitle: 'About Us',
     about: 'The OPC team’s gains here came not from betting right, but from riding an inevitable tide of the era — AI is returning the power to create and earn to ordinary people. We simply codified super-solo capability into a repeatable training flow, carried forward by that tide; those who join and act get lifted by it too.',
     stats: [
@@ -181,6 +186,7 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
   const isBusy = useCommerceStore(s => s.isBusy);
   const error = useCommerceStore(s => s.error);
   const confirmOrder = useCommerceStore(s => s.confirmOrder);
+  const refreshOrderStatus = useCommerceStore(s => s.refreshOrderStatus);
   const clearError = useCommerceStore(s => s.clearError);
   const text = copy[language];
   const [transactionId, setTransactionId] = useState('');
@@ -233,7 +239,30 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
                       {text.confirm}
                     </button>
                   </>
-                ) : <p>{text.callback}</p>}
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="coach-primary-button w-full mt-3"
+                      disabled={isBusy}
+                      onClick={() => {
+                        if (lastOrder.paymentUrl) window.open(lastOrder.paymentUrl, '_blank', 'noopener,noreferrer');
+                      }}
+                    >
+                      <ExternalLink size={15} />
+                      {text.payOnline}
+                    </button>
+                    <button
+                      type="button"
+                      className="coach-secondary-button w-full mt-2"
+                      disabled={isBusy}
+                      onClick={() => void refreshOrderStatus()}
+                    >
+                      {language === 'zh' ? '我已完成支付' : 'I have paid'}
+                    </button>
+                    <p className="home-pricing-note mt-3">{text.callback}</p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="coach-card p-5">
@@ -314,15 +343,13 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
               <strong className="home-community-title">
                 {language === 'zh' ? '学员社群' : 'Member Community'}
               </strong>
-              <div className="home-qr-placeholder" aria-label={language === 'zh' ? '社群二维码预留位' : 'Community QR code placeholder'}>
-                <span>
-                  {language === 'zh' ? '二维码位置' : 'QR code'}
-                </span>
+              <div className="home-qr-code" aria-label={language === 'zh' ? '社群二维码' : 'Community QR code'}>
+                <QRCodeSVG value={COMMUNITY_URL} size={132} level="M" marginSize={1} />
               </div>
               <p>
                 {language === 'zh'
-                  ? '购买解锁后可加入学员社群，获取同步更新和交流支持。入口二维码待提供。'
-                  : 'Members can join the community for updates and peer support. The QR code will be provided later.'}
+                  ? '扫码进入学员社群入口，购买解锁后获取同步更新和交流支持。'
+                  : 'Scan to open the member community entry; unlocked members receive updates and peer support.'}
               </p>
             </article>
           </div>

@@ -3,6 +3,10 @@ import type {
   CoachStartResult,
   CoachStatus,
   CommerceUser,
+  AdminAuditLog,
+  AdminOrder,
+  AdminOverview,
+  AdminUser,
   ModelServiceConfig,
   FollowUpThreadMeta,
   InstalledSkill,
@@ -13,6 +17,7 @@ import type {
   Product,
 } from '../types';
 import { API_BASE } from '../config';
+import { trackEvent } from '../services/analyticsService';
 
 const USER_TOKEN_KEY = 'june_user_token';
 let bootstrapPromise: Promise<void> | null = null;
@@ -125,6 +130,12 @@ interface CommerceStore {
   isStreaming: boolean;
   followUpStreaming: string | null;
   error: string | null;
+  adminOverview: AdminOverview | null;
+  adminUsers: AdminUser[];
+  adminOrders: AdminOrder[];
+  adminAuditLogs: AdminAuditLog[];
+  adminError: string | null;
+  isAdminBusy: boolean;
 
   bootstrap: () => Promise<void>;
   login: (account: string, password: string) => Promise<void>;
@@ -132,6 +143,7 @@ interface CommerceStore {
   logout: () => void;
   createOrder: (productId: string) => Promise<void>;
   confirmOrder: (transactionId: string) => Promise<void>;
+  refreshOrderStatus: () => Promise<boolean>;
   dismissOrder: () => void;
   loadOrders: () => Promise<void>;
   startCoach: (modelName: string, baseUrl: string, apiKey?: string) => Promise<boolean>;
@@ -159,6 +171,8 @@ interface CommerceStore {
     query: string;
   }) => Promise<void>;
   clearError: () => void;
+  loadAdminData: () => Promise<void>;
+  setAdminUserDisabled: (userId: string, disabled: boolean, reason: string) => Promise<boolean>;
 }
 
 function restoreFollowUps(detail: MvpRunDetail): {
@@ -200,6 +214,12 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
   isStreaming: false,
   followUpStreaming: null,
   error: null,
+  adminOverview: null,
+  adminUsers: [],
+  adminOrders: [],
+  adminAuditLogs: [],
+  adminError: null,
+  isAdminBusy: false,
 
   bootstrap: async () => {
     if (bootstrapPromise) return bootstrapPromise;
@@ -244,6 +264,7 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
         method: 'POST',
         body: JSON.stringify({ account, password }),
       });
+      trackEvent('auth.login_success');
       localStorage.setItem(USER_TOKEN_KEY, user.token);
       const [products, orders, coachStatus] = await Promise.all([
         request<Product[]>('/products'),
@@ -308,6 +329,10 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
         method: 'POST',
         body: JSON.stringify({ product_id: productId }),
       });
+      trackEvent('commerce.checkout_start', '#/payment', {
+        product_id: productId,
+        provider: order.provider,
+      });
       const [orders, coachStatus] = await Promise.all([
         request<Order[]>('/orders'),
         request<CoachStatus>('/coach/status'),
@@ -329,6 +354,9 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
         method: 'POST',
         body: JSON.stringify({ provider_transaction_id: transactionId }),
       });
+      trackEvent('commerce.payment_confirmed', '#/payment', {
+        provider: paid.provider,
+      });
       const [orders, coachStatus] = await Promise.all([
         request<Order[]>('/orders'),
         request<CoachStatus>('/coach/status'),
@@ -336,6 +364,30 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
       set({ lastOrder: paid, coachStatus });
     } catch (error: any) {
       set({ error: error?.message || '支付确认失败' });
+    } finally {
+      set({ isBusy: false });
+    }
+  },
+
+  refreshOrderStatus: async () => {
+    const order = get().lastOrder;
+    if (!order) return false;
+    set({ isBusy: true, error: null });
+    try {
+      const [orders, coachStatus] = await Promise.all([
+        request<Order[]>('/orders'),
+        request<CoachStatus>('/coach/status'),
+      ]);
+      const updated = orders.find(item => item.id === order.id) || order;
+      set({ orders, coachStatus, lastOrder: updated });
+      if (updated.status === 'paid') {
+        trackEvent('commerce.payment_detected', '#/payment', { provider: updated.provider });
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      set({ error: error?.message || '支付状态刷新失败' });
+      return false;
     } finally {
       set({ isBusy: false });
     }
@@ -583,6 +635,40 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  loadAdminData: async () => {
+    set({ isAdminBusy: true, adminError: null });
+    try {
+      const [overview, users, orders, auditLogs] = await Promise.all([
+        request<AdminOverview>('/admin/overview'),
+        request<AdminUser[]>('/admin/users'),
+        request<AdminOrder[]>('/admin/orders'),
+        request<AdminAuditLog[]>('/admin/audit-logs'),
+      ]);
+      set({ adminOverview: overview, adminUsers: users, adminOrders: orders, adminAuditLogs: auditLogs });
+    } catch (error: any) {
+      set({ adminError: error?.message || '管理数据加载失败' });
+    } finally {
+      set({ isAdminBusy: false });
+    }
+  },
+
+  setAdminUserDisabled: async (userId, disabled, reason) => {
+    set({ isAdminBusy: true, adminError: null });
+    try {
+      await request<AdminUser>(`/admin/users/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ disabled, reason }),
+      });
+      await get().loadAdminData();
+      return true;
+    } catch (error: any) {
+      set({ adminError: error?.message || '用户状态更新失败' });
+      return false;
+    } finally {
+      set({ isAdminBusy: false });
+    }
+  },
 
   loadModelServices: async () => {
     try {

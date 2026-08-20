@@ -244,10 +244,59 @@ export interface Order {
   status: 'pending' | 'paid' | 'cancelled';
   provider: string;
   providerOrderId: string;
+  paymentUrl?: string | null;
   providerTransactionId?: string | null;
   createdAt: number;
   paidAt?: number | null;
   sandbox?: boolean;
+}
+
+export interface AdminOverview {
+  totalUsers: number;
+  paidUsers: number;
+  disabledUsers: number;
+  activeRuns: number;
+  pendingOrders: number;
+  revenueCents: number;
+  analyticsEvents: number;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  account: string;
+  displayName: string;
+  isAdmin: boolean;
+  isDisabled: boolean;
+  disabledReason: string;
+  createdAt: number;
+  orderCount: number;
+  paidCount: number;
+}
+
+export interface AdminOrder {
+  id: string;
+  ownerAccount: string;
+  productName: string;
+  amountCents: number;
+  status: string;
+  provider: string;
+  providerOrderId: string;
+  createdAt: number;
+  paidAt?: number | null;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  actorId: string;
+  actorAccount: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  ip: string;
+  userAgent: string;
+  detail: Record<string, unknown>;
+  createdAt: number;
 }
 
 export interface CoachStatus {

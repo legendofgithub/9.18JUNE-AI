@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
+import { trackEvent } from '../../services/analyticsService';
 import ErrorBoundary from '../ErrorBoundary';
+import AdminView from './AdminView';
 import LandingView from './LandingView';
 import PaymentView from './PaymentView';
 import ProductPromoView from './ProductPromoView';
@@ -14,6 +16,7 @@ function readRoute(): SiteRoute {
   if (window.location.hash.startsWith('#/product')) return 'product';
   if (window.location.hash.startsWith('#/payment')) return 'payment';
   if (window.location.hash.startsWith('#/success')) return 'success';
+  if (window.location.hash.startsWith('#/admin')) return 'admin';
   return 'home';
 }
 
@@ -61,6 +64,10 @@ export default function CommerceApp() {
   }, []);
 
   useEffect(() => {
+    trackEvent('app.route_view', `#${route === 'home' ? '/' : `/${route}`}`);
+  }, [route]);
+
+  useEffect(() => {
     if (route === 'studio' && !isBootstrapping && !user) window.location.hash = '#/';
   }, [route, user, isBootstrapping]);
 
@@ -99,7 +106,11 @@ export default function CommerceApp() {
     );
   }
 
-  const effectiveRoute: SiteRoute = route === 'studio' && !user ? 'home' : route;
+  const effectiveRoute: SiteRoute = route === 'studio' && !user
+    ? 'home'
+    : route === 'admin' && (!user || !user.isAdmin)
+      ? 'home'
+      : route;
 
   return (
     <ErrorBoundary name="commerce-app">
@@ -110,6 +121,7 @@ export default function CommerceApp() {
         {effectiveRoute === 'payment' && <PaymentView language={language} />}
         {effectiveRoute === 'success' && <PurchaseSuccessView language={language} onEnterStudio={enterStudio} />}
         {effectiveRoute === 'studio' && <WorkspaceView language={language} />}
+        {effectiveRoute === 'admin' && <AdminView language={language} />}
       </div>
       {transitionPhase && <StudioTransition phase={transitionPhase} />}
     </ErrorBoundary>

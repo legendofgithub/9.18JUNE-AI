@@ -21,6 +21,18 @@ class OrderConfirmRequest(BaseModel):
     signature: str | None = None
 
 
+class AdminUserPatchRequest(BaseModel):
+    disabled: bool
+    reason: str = Field(default="", max_length=300)
+
+
+class AnalyticsEventRequest(BaseModel):
+    event_name: str = Field(pattern="^[a-z][a-z0-9_.]{1,59}$")
+    route: str = Field(default="", max_length=120)
+    session_id: str = Field(default="", max_length=80)
+    properties: dict[str, object] = Field(default_factory=dict)
+
+
 class SkillInstallRequest(BaseModel):
     model_name: str
     base_url: str

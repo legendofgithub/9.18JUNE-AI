@@ -64,3 +64,4 @@ backend/test_write.txt
 
 # ---- 上传文件 ----
 backend/uploads/
+.vercel

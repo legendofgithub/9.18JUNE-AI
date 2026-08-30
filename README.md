@@ -60,6 +60,25 @@ npm run dev
 
 当前支付仍为沙箱模式，仅适合本地联调；正式上线前需要接入可用商户资质和真实支付回调。
 
+## Windows EXE
+
+在仓库根目录执行：
+
+```powershell
+.\build-desktop.bat
+```
+
+产物是目录版 Windows 应用：
+
+```text
+dist\JuneAI\JuneAI.exe
+dist\JuneAI-Windows-x64.zip
+```
+
+不要只单独复制 `JuneAI.exe`；它需要同目录的运行时文件。对外分发使用 `dist\JuneAI-Windows-x64.zip`。双击后会自动启动本地服务并打开浏览器。
+
+桌面版数据默认保存在 `JuneAI.exe` 旁边的 `data\` 目录，包括 SQLite 数据库、日志和 Harness 工作区。若该目录不可写，会回退到 `%LOCALAPPDATA%\JuneAI`。首次注册的账号会自动成为本机管理员。可在 exe 旁放置 `.env` 覆盖模型、支付等配置；现有 `backend\.env`、`backend\june.db` 和 API Key 不会被打包进 exe。
+
 ## 验证
 
 ```powershell

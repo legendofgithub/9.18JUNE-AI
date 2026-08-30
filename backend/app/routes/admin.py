@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query, Request
 
 from ..core.exceptions import ForbiddenException, UnauthorizedException
 from ..core.response import success
+from ..core.security import get_client_ip
 from ..models.commerce_schemas import AdminUserPatchRequest
 
 
@@ -22,9 +23,7 @@ def _admin(request: Request):
 
 
 def _request_context(request: Request) -> tuple[str, str]:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    ip = (forwarded.split(",")[0].strip() if forwarded else "") or (request.client.host if request.client else "")
-    return ip, request.headers.get("user-agent", "")
+    return get_client_ip(request), request.headers.get("user-agent", "")
 
 
 @router.get("/overview")

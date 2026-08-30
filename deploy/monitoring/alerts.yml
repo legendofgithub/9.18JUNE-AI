@@ -1,0 +1,43 @@
+groups:
+  - name: june-api
+    rules:
+      - alert: JuneAPIHighErrorRate
+        expr: |
+          (
+            sum(rate(june_http_errors_total[5m]))
+            /
+            clamp_min(sum(rate(june_http_requests_total[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "June API 5xx 错误率超过 5%"
+          description: "最近 5 分钟错误率 {{ $value | humanizePercentage }}，请检查 API 日志。"
+
+      - alert: JuneAPIUnreachable
+        expr: up{job="june-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "June API 无法访问"
+          description: "Prometheus 已连续 2 分钟无法抓取 /metrics。"
+
+      - alert: JuneAgentToolFailures
+        expr: increase(june_agent_tool_failures_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 工具失败次数过多"
+          description: "最近 15 分钟工具失败超过 5 次，请查看 trace 定位原因。"
+
+      - alert: JuneAgentApprovalBacklog
+        expr: increase(june_agent_approvals_total[30m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 审批事件过多"
+          description: "最近 30 分钟审批事件超过 20 次，可能存在大量等待人工确认的高危操作。"

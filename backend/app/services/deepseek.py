@@ -14,7 +14,7 @@ import json
 from typing import AsyncGenerator, Dict, List
 
 from ..core.config import settings
-from ..core.url_security import validate_model_base_url
+from ..core.url_security import model_async_client, validate_model_base_url
 
 
 class DeepSeekService:
@@ -78,25 +78,34 @@ class DeepSeekService:
             "provider_code": provider_code,
         }
 
-    async def test_connection(self) -> dict:
-        """用一次最小非流式请求验证模型、Base URL 和 API Key。"""
+    async def test_connection(
+        self,
+        model: str = "",
+        base_url: str = "",
+        api_key: str = "",
+    ) -> dict:
+        """用一次最小非流式请求验证模型、Base URL 和 API Key。
+
+        可选参数用于临时覆盖（如多租户校验用户自带密钥），
+        不会改写实例状态，避免污染全局单例。"""
         import httpx
 
-        base_url = validate_model_base_url(self.BASE_URL)
-        key = self.get_api_key()
+        base_url = validate_model_base_url(base_url or self.BASE_URL)
+        key = api_key or self.get_api_key()
+        used_model = model or self.DEFAULT_MODEL
         if not key:
             return {"ok": False, "error": "未配置 API Key"}
 
         payload = {
-            "model": self.DEFAULT_MODEL,
+            "model": used_model,
             "messages": [{"role": "user", "content": "ping"}],
             "max_tokens": 1,
             "stream": False,
         }
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            async with model_async_client(base_url, timeout=20.0) as client:
                 response = await client.post(
-                    f"{base_url}/chat/completions",
+                    "/chat/completions",
                     headers={
                         "Authorization": f"Bearer {key}",
                         "Content-Type": "application/json",
@@ -108,8 +117,8 @@ class DeepSeekService:
             data = response.json()
             return {
                 "ok": True,
-                "model": data.get("model", self.DEFAULT_MODEL),
-                "response_model": self.DEFAULT_MODEL,
+                "model": data.get("model", used_model),
+                "response_model": used_model,
             }
         except httpx.TimeoutException:
             return {"ok": False, "error": "连接 AI 工具超时，请稍后再试。"}
@@ -125,6 +134,7 @@ class DeepSeekService:
         model: str = "",
         base_url: str = "",
         temperature: float = 0.7,
+        tools: list[dict] | None = None,
     ) -> AsyncGenerator[str, None]:
         """流式对话 —— 生成 delta 文本片段"""
         import httpx
@@ -155,6 +165,12 @@ class DeepSeekService:
         formatted_messages = []
         for msg in messages:
             entry = {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+            if msg.get("tool_calls"):
+                entry["tool_calls"] = msg["tool_calls"]
+            if msg.get("tool_call_id"):
+                entry["tool_call_id"] = msg["tool_call_id"]
+            if msg.get("name"):
+                entry["name"] = msg["name"]
             formatted_messages.append(entry)
 
         payload = {
@@ -163,12 +179,16 @@ class DeepSeekService:
             "stream": True,
             "temperature": temperature,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
 
         # 推理模型（如 glm-5.2）响应较慢，用更长超时
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        aggregated_tool_calls: list[dict] = []
+        async with model_async_client(request_base_url, timeout=120.0) as client:
             async with client.stream(
                 "POST",
-                f"{request_base_url}/chat/completions",
+                "/chat/completions",
                 headers=headers,
                 json=payload,
             ) as response:
@@ -188,8 +208,44 @@ class DeepSeekService:
                             # 推理模型（如 glm-5.2）先输出 reasoning_content，再输出 content
                             if delta.get("reasoning_content"):
                                 yield {"type": "reasoning"}
+                            tool_delta = delta.get("tool_calls")
+                            if tool_delta:
+                                aggregated_tool_calls.extend(
+                                    self._merge_tool_call(item) for item in tool_delta
+                                )
                             content = delta.get("content", "")
                             if content:
                                 yield content
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
+                if aggregated_tool_calls:
+                    yield {
+                        "type": "tool_calls",
+                        "tool_calls": self._coalesce_tool_calls(aggregated_tool_calls),
+                    }
+
+    @staticmethod
+    def _merge_tool_call(item: dict) -> dict:
+        function = item.get("function") or {}
+        return {
+            "index": int(item.get("index") or 0),
+            "id": item.get("id") or "",
+            "name": function.get("name") or "",
+            "arguments": function.get("arguments") or "",
+        }
+
+    @staticmethod
+    def _coalesce_tool_calls(items: list[dict]) -> list[dict]:
+        merged: dict[int, dict] = {}
+        for item in items:
+            index = item["index"]
+            if index not in merged:
+                merged[index] = {"id": item.get("id") or f"call_{index}", "type": "function", "function": {"name": "", "arguments": ""}}
+            current = merged[index]
+            if item.get("id"):
+                current["id"] = item["id"]
+            if item.get("name"):
+                current["function"]["name"] += item["name"]
+            if item.get("arguments"):
+                current["function"]["arguments"] += item["arguments"]
+        return [merged[index] for index in sorted(merged)]

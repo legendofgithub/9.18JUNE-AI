@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
-  Bot,
+  Activity,
   CheckCircle2,
-  ChevronDown,
+  Database,
   Download,
-  FileCode2,
   FileDown,
   FileText,
   Folder,
   FolderOpen,
+  Gauge,
   KeyRound,
   Loader2,
   Lock,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -27,121 +28,42 @@ import {
   X,
 } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
-import type { Message, MvpRunDetail } from '../../types';
+import useHarnessStore from '../../stores/useHarnessStore';
+import type { HarnessPermission } from '../../types';
 import type { SiteLanguage } from './SiteHeader';
 import ModelServicesPanel from './ModelServicesPanel';
 
-type Permission = 'read-only' | 'workspace-write' | 'full-access';
 type TemperatureLevel = 'low' | 'medium' | 'high';
-
-interface LocalSession {
-  id: string;
-  title: string;
-  messages: Message[];
-}
-
-interface Project {
-  id: string;
-  title: string;
-  folderName?: string;
-  folderFileCount?: number;
-  sessions: LocalSession[];
-}
-
-interface ReportDoc {
-  id: string;
-  title: string;
-  content: string;
-  createdAt: number;
-}
-
-interface UploadedFileDoc {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  content: string;
-  uploadedAt: number;
-}
-
-const DEFAULT_SESSION_ID = 'default';
+type RightTab = 'guide' | 'context' | 'files' | 'docs' | 'trace';
 
 const TEMPERATURE_VALUES: Record<TemperatureLevel, number> = {
   low: 0.2,
   medium: 0.7,
   high: 1.2,
 };
-
-const STORAGE_KEY_PREFIX = 'june_project_workspace_';
 const PERMISSION_STORAGE_KEY = 'june_project_permission';
 
-function uid(prefix: string) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-}
-
 function todayText() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  const day = `${d.getDate()}`.padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
-function escapeHtml(text: string) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function permissionLabel(permission: HarnessPermission) {
+  if (permission === 'read-only') return 'Read only';
+  if (permission === 'workspace-write') return 'Workspace write';
+  return 'Full access';
 }
 
-function markdownToHtml(markdown: string) {
-  const lines = markdown.split('\n');
-  let html = '';
-  let listType: 'ul' | 'ol' | null = null;
-  const closeList = () => {
-    if (listType === 'ul') html += '</ul>';
-    if (listType === 'ol') html += '</ol>';
-    listType = null;
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    running: '执行中',
+    waiting_approval: '等待审批',
+    waiting_tool: '可继续',
+    finished: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+    rejected: '已拒绝',
   };
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd();
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
-    if (heading) {
-      closeList();
-      const level = heading[1].length;
-      html += `<h${level}>${escapeHtml(heading[2])}</h${level}>`;
-      continue;
-    }
-    const ul = line.match(/^[-*]\s+(.*)$/);
-    if (ul) {
-      if (listType !== 'ul') {
-        closeList();
-        html += '<ul>';
-        listType = 'ul';
-      }
-      html += `<li>${escapeHtml(ul[1])}</li>`;
-      continue;
-    }
-    const ol = line.match(/^\d+[.)]\s+(.*)$/);
-    if (ol) {
-      if (listType !== 'ol') {
-        closeList();
-        html += '<ol>';
-        listType = 'ol';
-      }
-      html += `<li>${escapeHtml(ol[1])}</li>`;
-      continue;
-    }
-    if (!line.trim()) {
-      closeList();
-      continue;
-    }
-    closeList();
-    html += `<p>${escapeHtml(line)}</p>`;
-  }
-  closeList();
-  return html;
+  return labels[status] || status;
 }
 
 function downloadBlob(filename: string, content: string, mime: string) {
@@ -156,237 +78,113 @@ function downloadBlob(filename: string, content: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-function downloadMarkdown(content: string) {
-  downloadBlob(`今日交付成果报告-${todayText()}.md`, content, 'text/markdown;charset=utf-8');
+function downloadWord(title: string, content: string) {
+  const escaped = content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body><pre>${escaped}</pre></body></html>`;
+  downloadBlob(`${title}.doc`, html, 'application/msword;charset=utf-8');
 }
 
-function downloadWord(content: string) {
-  const html = `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>今日交付成果报告</title></head>
-<body>
-  <div style="display:flex;align-items:center;gap:10px;padding-bottom:14px;margin-bottom:18px;border-bottom:2px solid #0f766e;">
-    <span style="width:36px;height:36px;border-radius:10px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;">J</span>
-    <div>
-      <div style="font-size:20px;font-weight:800;color:#0f766e;">June AI</div>
-      <div style="font-size:12px;color:#6b7280;">超级个体训练师 · 交付成果报告</div>
-    </div>
-  </div>
-  ${markdownToHtml(content)}
-</body>
-</html>`;
-  downloadBlob(`今日交付成果报告-${todayText()}.doc`, html, 'application/msword;charset=utf-8');
-}
-
-function downloadPdf(content: string) {
+function downloadPdf(title: string, content: string) {
   const win = window.open('', '_blank');
-  if (!win) {
-    window.alert('请允许浏览器弹出窗口，才能导出 PDF。你也可以使用“打印 → 另存为 PDF”。');
-    return;
-  }
-  const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>今日交付成果报告</title><style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 820px; margin: 40px auto; padding: 0 24px; line-height: 1.75; color: #1f2937; }
-  h1, h2, h3 { color: #0f766e; }
-  pre, code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
-</style></head>
-<body>
-  <div style="display:flex;align-items:center;gap:10px;padding-bottom:14px;margin-bottom:18px;border-bottom:2px solid #0f766e;">
-    <span style="width:36px;height:36px;border-radius:10px;background:#0f766e;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;">J</span>
-    <div>
-      <div style="font-size:20px;font-weight:800;color:#0f766e;">June AI</div>
-      <div style="font-size:12px;color:#6b7280;">超级个体训练师 · 交付成果报告</div>
-    </div>
-  </div>
-  ${markdownToHtml(content)}
-</body>
-</html>`;
-  win.document.write(html);
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head><body><pre>${content}</pre></body></html>`);
   win.document.close();
   win.focus();
   win.print();
 }
 
-function buildMockReply(input: string, temperature: TemperatureLevel, runTitle?: string) {
-  const trimmed = input.trim();
-  const topic = runTitle || '当前项目';
-  if (temperature === 'high') {
-    return `好的，我明白你想围绕「${topic}」继续推进。我会尽量讲得细一些，也会多给你一些鼓励和陪伴。
-
-你刚才提到：${trimmed}
-
-我们可以先拆成三个小步骤：
-1. 先明确你当前最想解决的一个具体问题；
-2. 把它转成一句可以直接交给 AI 的自然语言指令；
-3. 做出第一个可试用的小结果，再根据反馈迭代。
-
-不用急，今天我们只要往前推进一小步就好。你愿意先说说看，你希望这个项目最终给谁带来什么结果吗？`;
-  }
-  if (temperature === 'low') {
-    return `收到。基于「${topic}」，你当前的问题是：${trimmed}
-
-建议下一步：把目标缩小为一个最小可交付结果，并用一句话描述给 AI。请告诉我这个结果的服务对象和验收标准，我会继续帮你推进。`;
-  }
-  return `收到。关于「${topic}」，你刚才说的是：${trimmed}
-
-我们可以先把目标拆成“给谁用、解决什么问题、交付什么结果”三部分。你希望我先帮你整理哪一部分？`;
-}
-
 function buildDailyReport(
-  currentRun: MvpRunDetail,
-  activeSession: LocalSession | undefined,
+  runTitle: string,
+  vertical: string,
+  completed: number,
+  total: number,
+  currentStep: string,
+  messages: { role: string; content: string }[],
+  permission: HarnessPermission,
   temperature: TemperatureLevel,
-  permission: Permission,
 ) {
-  const date = todayText();
-  const completed = currentRun.steps.filter(step => step.isCompleted);
-  const currentStep = currentRun.currentStep;
-  const lines: string[] = [];
-  lines.push(`# 🚀 June AI`);
-  lines.push('');
-  lines.push(`## 今日交付成果报告`);
-  lines.push('');
-  lines.push(`**日期**：${date}`);
-  lines.push('');
-  lines.push(`## 项目概览`);
-  lines.push('');
-  lines.push(`- 项目：${currentRun.title}`);
-  lines.push(`- 目标人群/方向：${currentRun.vertical || '待明确'}`);
-  lines.push(`- 当前状态：${currentRun.status === 'completed' ? '已完成' : '进行中'}`);
-  lines.push(`- 进度：${completed.length}/${currentRun.steps.length}`);
-  lines.push('');
-  lines.push(`## 今日完成`);
-  lines.push('');
-  if (completed.length === 0) {
-    lines.push('今天还没有标记完成的节点，但对话推进也是有价值的进展。');
-  } else {
-    completed.forEach(step => {
-      lines.push(`- [x] ${step.order}. ${step.title}`);
-    });
-  }
-  lines.push('');
-  lines.push(`## 当前引导进度`);
-  lines.push('');
-  lines.push(`- 当前节点：${currentStep.order}. ${currentStep.title}`);
-  lines.push(`- 节点说明：${currentStep.instructions || '无'}`);
-  lines.push(`- 阻塞点：${currentRun.blocker || '无'}`);
-  lines.push(`- 下一个最小动作：${currentRun.nextAction || '无'}`);
-  lines.push('');
-  lines.push(`## 对话记录摘要`);
-  lines.push('');
-  const messages = activeSession?.messages?.length ? activeSession.messages : currentRun.messages;
-  if (messages.length === 0) {
-    lines.push('今天还没有对话记录。');
-  } else {
-    const recent = messages.slice(-6);
-    recent.forEach(message => {
-      const role = message.role === 'user' ? '我' : 'AI';
-      const content = message.content.replace(/\s+/g, ' ').trim();
-      lines.push(`- **${role}**：${content.slice(0, 120)}${content.length > 120 ? '…' : ''}`);
-    });
-  }
-  lines.push('');
-  lines.push(`## 今日设置`);
-  lines.push('');
-  lines.push(`- 温度档位：${temperature === 'high' ? '高（更详细、更温和）' : temperature === 'low' ? '低（更理性、更高效）' : '中（均衡）'}`);
-  lines.push(`- 权限模式：${permission === 'read-only' ? 'Read only' : permission === 'workspace-write' ? 'Workspace write' : 'Full access'}`);
-  lines.push('');
-  lines.push(`## 下一步建议`);
-  lines.push('');
-  lines.push(`1. 继续完成「${currentStep.title}」的交付物。`);
-  lines.push(`2. 如果遇到卡点，在对话中描述你希望用户看到什么、点击什么、得到什么。`);
-  lines.push(`3. 完成当前节点后，及时点击“完成节点”，让系统更新引导进度。`);
+  const lines = [
+    '# June AI 今日交付成果报告',
+    '',
+    `日期：${todayText()}`,
+    `项目：${runTitle}`,
+    `目标人群：${vertical || '待明确'}`,
+    `进度：${completed}/${total}`,
+    `当前节点：${currentStep}`,
+    `权限：${permissionLabel(permission)}`,
+    `温度：${temperature}`,
+    '',
+    '## 近期对话',
+    ...messages.slice(-8).map(item => `- ${item.role === 'user' ? '我' : 'AI'}：${item.content.slice(0, 180)}`),
+    '',
+    '## 下一步',
+    '继续完成当前节点交付物，并把可确认的结果写入项目记忆或文档。',
+  ];
   return lines.join('\n');
-}
-
-function permissionLabel(permission: Permission) {
-  if (permission === 'read-only') return 'Read only';
-  if (permission === 'workspace-write') return 'Workspace write';
-  return 'Full access';
 }
 
 export default function ProjectWorkspace({ language }: { language: SiteLanguage }) {
   const currentRun = useCommerceStore(s => s.currentRun);
-    const user = useCommerceStore(s => s.user);
-  const runs = useCommerceStore(s => s.runs);
+  const user = useCommerceStore(s => s.user);
   const modelServices = useCommerceStore(s => s.modelServices);
   const selectedModel = useCommerceStore(s => s.selectedModel);
-  const isStreaming = useCommerceStore(s => s.isStreaming);
-  const isBusy = useCommerceStore(s => s.isBusy);
-    const error = useCommerceStore(s => s.error);
-    const clearError = useCommerceStore(s => s.clearError);
-  const sendChat = useCommerceStore(s => s.sendChat);
   const activateModel = useCommerceStore(s => s.activateModel);
   const patchStep = useCommerceStore(s => s.patchStep);
-  const selectRun = useCommerceStore(s => s.selectRun);
 
-  const [projects, setProjects] = useState<Project[]>(() => {
-    const storageKey = `${STORAGE_KEY_PREFIX}${user?.id || 'anonymous'}`;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Project[];
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      }
-    } catch {
-      // ignore corrupted storage
-    }
-    return [];
-  });
-  const [activeProjectId, setActiveProjectId] = useState<string>(() => projects[0]?.id || '');
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => projects[0]?.sessions[0]?.id || '');
+  const harness = useHarnessStore();
+  const {
+    projects,
+    activeProjectId,
+    activeSessionId,
+    files,
+    documents,
+    memories,
+    context,
+    activeRun,
+    toolCalls,
+    runEvents,
+    approval,
+    isBusy,
+    isRunning,
+    error,
+  } = harness;
+
   const [chatInput, setChatInput] = useState('');
   const [rightOpen, setRightOpen] = useState(true);
   const [leftCollapsed, setLeftCollapsed] = useState(() => window.innerWidth < 1024);
-  const [rightWidth, setRightWidth] = useState(380);
   const [leftWidth, setLeftWidth] = useState(300);
-  const [rightTab, setRightTab] = useState<'guide' | 'docs'>('guide');
-  const [reports, setReports] = useState<ReportDoc[]>([]);
-  const [activeReportId, setActiveReportId] = useState<string | null>(null);
-    const [uploadedFiles, setUploadedFiles] = useState<UploadedFileDoc[]>([]);
-    const [activeUploadedId, setActiveUploadedId] = useState<string | null>(null);
+  const [rightWidth, setRightWidth] = useState(390);
+  const [rightTab, setRightTab] = useState<RightTab>('guide');
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [permission, setPermission] = useState<Permission>(() => {
-    const saved = localStorage.getItem(PERMISSION_STORAGE_KEY);
-    return saved === 'workspace-write' || saved === 'full-access' ? saved : 'read-only';
-  });
-  const [temperature, setTemperature] = useState<TemperatureLevel>('medium');
   const [showModelServices, setShowModelServices] = useState(false);
-  const [folderNotice, setFolderNotice] = useState('');
+  const [temperature, setTemperature] = useState<TemperatureLevel>('medium');
   const [artifactDraft, setArtifactDraft] = useState('');
+  const [memoryDraft, setMemoryDraft] = useState('');
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-    const inputRef = useRef<HTMLTextAreaElement>(null);
-    const chatMessagesRef = useRef<HTMLDivElement>(null);
-    const chatSessionRef = useRef<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   const activeProject = projects.find(project => project.id === activeProjectId) || projects[0];
   const activeSession = activeProject?.sessions.find(session => session.id === activeSessionId) || activeProject?.sessions[0];
+  const permission = activeSession?.permission || 'read-only';
+  const activeMessages = activeSession?.messages || [];
 
   useEffect(() => {
-    if (!currentRun) return;
-    const targetId = chatSessionRef.current || DEFAULT_SESSION_ID;
-    setProjects(prev => prev.map(project => {
-      if (!project.sessions.some(session => session.id === targetId)) return project;
-      return {
-        ...project,
-        sessions: project.sessions.map(session =>
-          session.id === targetId
-            ? { ...session, messages: currentRun.messages }
-            : session,
-        ),
-      };
-    }));
-  }, [currentRun]);
+    if (user?.id) void harness.bootstrap(user.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   useEffect(() => {
-    const sync = () => setLeftCollapsed(window.innerWidth < 1024);
-    sync();
+    const sync = () => {
+      const narrow = window.innerWidth < 1024;
+      setLeftCollapsed(narrow);
+      setRightOpen(!narrow);
+    };
     window.addEventListener('resize', sync);
     return () => window.removeEventListener('resize', sync);
   }, []);
@@ -395,247 +193,15 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
     setArtifactDraft(currentRun?.currentStep?.artifactContent || '');
   }, [currentRun?.currentStep?.id, currentRun?.currentStep?.artifactContent]);
 
-    useEffect(() => {
-      const handler = (event: BeforeUnloadEvent) => {
-        if (reports.length === 0 && uploadedFiles.length === 0) return;
-        event.preventDefault();
-        event.returnValue = '';
-      };
-      window.addEventListener('beforeunload', handler);
-      return () => window.removeEventListener('beforeunload', handler);
-    }, [reports.length, uploadedFiles.length]);
+  useEffect(() => {
+    const element = messagesRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [activeMessages.length, activeMessages[activeMessages.length - 1]?.content]);
 
-    useEffect(() => {
-      const storageKey = `${STORAGE_KEY_PREFIX}${user?.id || 'anonymous'}`;
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(projects));
-      } catch {
-        // storage may be unavailable
-      }
-    }, [projects, user?.id]);
-
-  const activeMessages = activeSession?.messages || [];
-
-    useEffect(() => {
-      const el = chatMessagesRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }, [activeMessages]);
-
-  const updateActiveProject = (updater: (project: Project) => Project) => {
-    setProjects(prev => prev.map(project => project.id === activeProject?.id ? updater(project) : project));
-  };
-
-  const createProject = (event?: React.MouseEvent) => {
-    event?.preventDefault();
-    const title = newProjectName.trim() || `新项目 ${projects.length + 1}`;
-    const project: Project = {
-      id: uid('project'),
-      title,
-      sessions: [{ id: uid('session'), title: '会话 1', messages: [] }],
-    };
-    setProjects(prev => [...prev, project]);
-    setActiveProjectId(project.id);
-    setActiveSessionId(project.sessions[0].id);
-    setNewProjectName('');
-    setShowNewProject(false);
-  };
-
-  const createSession = () => {
-    if (!activeProject) return;
-    const count = activeProject.sessions.length + 1;
-    const session: LocalSession = {
-      id: uid('session'),
-      title: `会话 ${count}`,
-      messages: [],
-    };
-    updateActiveProject(project => ({ ...project, sessions: [...project.sessions, session] }));
-    setActiveSessionId(session.id);
-  };
-
-  const deleteProject = (projectId: string) => {
-    const target = projects.find(project => project.id === projectId);
-    if (!target) return;
-    const message = language === 'zh'
-      ? `确定删除项目「${target.title}」吗？该项目下的所有会话和对话记录将一并删除，且无法恢复。`
-      : `Delete project "${target.title}"? All of its sessions and messages will be removed permanently.`;
-    if (!window.confirm(message)) return;
-    const next = projects.filter(project => project.id !== projectId);
-    setProjects(next);
-    if (activeProjectId === projectId) {
-      setActiveProjectId(next[0]?.id || '');
-      setActiveSessionId(next[0]?.sessions[0]?.id || '');
-    }
-  };
-
-  const deleteSession = (sessionId: string) => {
-    const project = activeProject;
-    if (!project) return;
-    const session = project.sessions.find(item => item.id === sessionId);
-    if (!session) return;
-    const message = language === 'zh'
-      ? `确定删除会话「${session.title}」吗？该会话的对话记录将无法恢复。`
-      : `Delete session "${session.title}"? Its messages will be removed permanently.`;
-    if (!window.confirm(message)) return;
-    const nextSessions = project.sessions.filter(item => item.id !== sessionId);
-    setProjects(prev => prev.map(item => item.id === project.id ? { ...item, sessions: nextSessions } : item));
-    if (activeSessionId === sessionId) {
-      setActiveSessionId(nextSessions[0]?.id || '');
-    }
-  };
-
-  const selectFolder = (files: FileList | null) => {
-    if (!files || files.length === 0 || !activeProject) return;
-    const first = files[0];
-    const folderName = (first as any).webkitRelativePath?.split('/')[0] || first.name || '已选择文件夹';
-    updateActiveProject(project => ({
-      ...project,
-      folderName,
-      folderFileCount: files.length,
-    }));
-    setFolderNotice(`已挂载「${folderName}」，共 ${files.length} 个文件`);
-  };
-
-  const handleSend = () => {
-    const baseContent = chatInput.trim();
-      const fileContext = uploadedFiles.length > 0
-        ? `\n\n[临时文档库文件内容]\n${uploadedFiles.map(file => `--- ${file.name} ---\n${file.content}`).join('\n\n').slice(0, 20000)}`
-        : '';
-      const content = baseContent;
-    if (!content || !activeSession) return;
-    if (currentRun && currentRun.status !== 'completed') {
-      chatSessionRef.current = activeSession.id;
-      setChatInput('');
-      const userMessage: Message = {
-          id: uid('msg'),
-          role: 'user',
-          content,
-          timestamp: Date.now(),
-          threadId: activeSession.id,
-        };
-        updateActiveProject(project => ({
-          ...project,
-          sessions: project.sessions.map(session =>
-            session.id === activeSession.id
-              ? { ...session, messages: [...session.messages, userMessage] }
-              : session,
-          ),
-        }));
-        setChatInput('');
-        const placeholder: Message = {
-            id: uid('msg'),
-            role: 'assistant',
-            content: '...',
-            timestamp: Date.now(),
-            threadId: activeSession.id,
-          };
-          updateActiveProject(project => ({
-            ...project,
-            sessions: project.sessions.map(session =>
-              session.id === activeSession.id
-                ? { ...session, messages: [...session.messages, placeholder] }
-                : session,
-            ),
-          }));
-          void sendChat(content, TEMPERATURE_VALUES[temperature], fileContext || undefined, permission);
-      return;
-    }
-    const userMessage: Message = {
-      id: uid('msg'),
-      role: 'user',
-      content,
-      timestamp: Date.now(),
-      threadId: activeSession.id,
-    };
-    updateActiveProject(project => ({
-      ...project,
-      sessions: project.sessions.map(session =>
-        session.id === activeSession.id
-          ? { ...session, messages: [...session.messages, userMessage] }
-          : session,
-      ),
-    }));
-    setChatInput('');
-    window.setTimeout(() => {
-      const reply = buildMockReply(content, temperature, activeProject?.title);
-      const assistantMessage: Message = {
-        id: uid('msg'),
-        role: 'assistant',
-        content: reply,
-        timestamp: Date.now(),
-        threadId: activeSession.id,
-      };
-      setProjects(prev => prev.map(project => ({
-        ...project,
-        sessions: project.sessions.map(session =>
-          session.id === activeSession.id
-            ? { ...session, messages: [...session.messages, assistantMessage] }
-            : session,
-        ),
-      })));
-    }, 500);
-  };
-
-  const generateDailyReport = () => {
-    if (!currentRun) return;
-    const content = buildDailyReport(currentRun, activeSession, temperature, permission);
-    const report: ReportDoc = {
-      id: uid('report'),
-      title: `June AI · 今日交付成果报告 ${todayText()}`,
-      content,
-      createdAt: Date.now(),
-    };
-    setReports(prev => [report, ...prev]);
-    setActiveReportId(report.id);
-    setRightTab('docs');
-    setRightOpen(true);
-  };
-
-  const deleteReport = (reportId: string) => {
-    const next = reports.filter(report => report.id !== reportId);
-    setReports(next);
-    if (activeReportId === reportId) {
-      setActiveReportId(next[0]?.id || null);
-    }
-  };
-
-  const activeReport = reports.find(report => report.id === activeReportId) || reports[0];
-    const activeUploadedFile = uploadedFiles.find(file => file.id === activeUploadedId) || uploadedFiles[0];
-
-    const uploadFiles = async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      const loaded = await Promise.all(
-        Array.from(files).slice(0, 20).map(async file => {
-          let content = '';
-          try {
-            content = await file.text();
-          } catch {
-            content = '';
-          }
-          return {
-            id: uid('file'),
-            name: file.name,
-            size: file.size,
-            type: file.type || 'text/plain',
-            content: content.slice(0, 20000),
-            uploadedAt: Date.now(),
-          } satisfies UploadedFileDoc;
-        }),
-      );
-      setUploadedFiles(prev => [...loaded, ...prev]);
-      if (loaded[0]) {
-        setActiveUploadedId(loaded[0].id);
-        setActiveReportId(null);
-      }
-      if (uploadInputRef.current) uploadInputRef.current.value = '';
-    };
-
-    const deleteUploadedFile = (fileId: string) => {
-      const next = uploadedFiles.filter(file => file.id !== fileId);
-      setUploadedFiles(next);
-      if (activeUploadedId === fileId) {
-        setActiveUploadedId(next[0]?.id || null);
-      }
-    };
+  const contextPercent = useMemo(() => {
+    if (!context?.budgetTokens) return 0;
+    return Math.min(100, Math.round((context.totalTokens / context.budgetTokens) * 100));
+  }, [context]);
 
   const startDrag = (kind: 'left' | 'right') => (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -655,10 +221,11 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
     window.addEventListener('mouseup', up);
   };
 
-  const temperatureLabel: Record<TemperatureLevel, string> = {
-    low: '低',
-    medium: '中',
-    high: '高',
+  const createProject = async () => {
+    const title = newProjectName.trim() || `新项目 ${projects.length + 1}`;
+    await harness.createProject(title);
+    setNewProjectName('');
+    setShowNewProject(false);
   };
 
   const openFolderPicker = () => {
@@ -667,11 +234,34 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
     input.setAttribute('webkitdirectory', '');
     input.setAttribute('directory', '');
     input.click();
-    };
+  };
 
-    const openUploadPicker = () => {
-      uploadInputRef.current?.click();
-    };
+  const handleSend = () => {
+    const content = chatInput.trim();
+    if (!content || !activeSession || currentRun?.status === 'completed') return;
+    setChatInput('');
+    void harness.sendMessage(content, TEMPERATURE_VALUES[temperature], permission);
+  };
+
+  const generateDailyReport = async () => {
+    if (!currentRun || !activeSession) return;
+    const completed = currentRun.steps.filter(step => step.isCompleted).length;
+    const content = buildDailyReport(
+      currentRun.title,
+      currentRun.vertical,
+      completed,
+      currentRun.steps.length,
+      currentRun.currentStep?.title || '无',
+      activeMessages,
+      permission,
+      temperature,
+    );
+    const created = await harness.createDocument(`June AI · 今日交付成果报告 ${todayText()}`, content);
+    if (created) setRightTab('docs');
+  };
+
+  const temperatureLabel: Record<TemperatureLevel, string> = { low: '低', medium: '中', high: '高' };
+  const busy = isBusy || useCommerceStore.getState().isBusy;
 
   return (
     <main className="studio-shell dsh-workspace project-workspace" data-theme="dark">
@@ -680,16 +270,13 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
         type="file"
         multiple
         style={{ display: 'none' }}
-        onChange={event => selectFolder(event.target.files)}
+        onChange={event => {
+          if (event.target.files) void harness.uploadFiles(event.target.files);
+          if (folderInputRef.current) folderInputRef.current.value = '';
+        }}
       />
 
-      <div
-        className="dsh-grid"
-        style={{
-          gridTemplateColumns: `${leftCollapsed ? 56 : leftWidth}px minmax(0,1fr) ${rightOpen ? rightWidth : 0}px`,
-        }}
-      >
-        {/* ===== 左侧：项目 / 会话 / 设置 ===== */}
+      <div className="dsh-grid" style={{ gridTemplateColumns: `${leftCollapsed ? 56 : leftWidth}px minmax(0,1fr) ${rightOpen ? rightWidth : 0}px` }}>
         <aside className={leftCollapsed ? 'dsh-left collapsed' : 'dsh-left'}>
           {leftCollapsed ? (
             <div className="dsh-rail">
@@ -700,12 +287,10 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
             <div className="dsh-left-inner project-left-inner">
               <div className="project-left-head">
                 <div>
-                  <h2 className="project-left-title">{language === 'zh' ? '项目工作区' : 'Projects'}</h2>
-                  <p className="project-left-subtitle">{runs.length} 个引导路径 · {projects.length} 个本地项目</p>
+                  <h2 className="project-left-title">{language === 'zh' ? 'Harness 项目' : 'Harness'}</h2>
+                  <p className="project-left-subtitle">{projects.length} 个项目 · {files.length} 个文件</p>
                 </div>
-                <button className="dsh-icon-button" onClick={() => setLeftCollapsed(true)} title="折叠左侧栏">
-                  <PanelLeftClose size={15} />
-                </button>
+                <button className="dsh-icon-button" onClick={() => setLeftCollapsed(true)} title="折叠左侧栏"><PanelLeftClose size={15} /></button>
               </div>
 
               <div className="project-actions">
@@ -713,35 +298,22 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                   <Plus size={14} /> {language === 'zh' ? '新建项目' : 'New Project'}
                 </button>
                 <button className="coach-secondary-button project-action-button" onClick={openFolderPicker}>
-                  <FolderOpen size={14} /> {language === 'zh' ? '选择挂载文件夹' : 'Mount Folder'}
+                  <FolderOpen size={14} /> {language === 'zh' ? '上传项目快照' : 'Upload Snapshot'}
                 </button>
               </div>
 
               {showNewProject && (
                 <div className="project-create-box">
-                  <input
-                    autoFocus
-                    className="coach-input"
-                    placeholder={language === 'zh' ? '项目名称' : 'Project name'}
-                    value={newProjectName}
-                    onChange={event => setNewProjectName(event.target.value)}
-                    onKeyDown={event => {
-                      if (event.key === 'Enter') createProject();
-                      if (event.key === 'Escape') setShowNewProject(false);
-                    }}
-                  />
+                  <input autoFocus className="coach-input" placeholder={language === 'zh' ? '项目名称' : 'Project name'} value={newProjectName} onChange={event => setNewProjectName(event.target.value)} onKeyDown={event => {
+                    if (event.key === 'Enter') void createProject();
+                    if (event.key === 'Escape') setShowNewProject(false);
+                  }} />
                   <div className="project-create-actions">
-                    <button type="button" className="project-create-button coach-primary-button" onClick={createProject}>
-                      <CheckCircle2 size={14} /> {language === 'zh' ? '创建' : 'Create'}
-                    </button>
-                    <button className="coach-secondary-button" onClick={() => setShowNewProject(false)}>
-                      <X size={14} /> {language === 'zh' ? '取消' : 'Cancel'}
-                    </button>
+                    <button type="button" className="project-create-button coach-primary-button" onClick={() => void createProject()}><CheckCircle2 size={14} /> 创建</button>
+                    <button className="coach-secondary-button" onClick={() => setShowNewProject(false)}><X size={14} /> 取消</button>
                   </div>
                 </div>
               )}
-
-              {folderNotice && <p className="project-folder-notice">{folderNotice}</p>}
 
               <div className="project-list">
                 {projects.map(project => {
@@ -749,54 +321,30 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                   return (
                     <div key={project.id} className={`project-item ${isActive ? 'is-active' : ''}`}>
                       <div className="project-item-head">
-                        <button
-                          className="project-item-select"
-                          onClick={() => {
-                            setActiveProjectId(project.id);
-                            setActiveSessionId(project.sessions[0]?.id || '');
-                          }}
-                        >
+                        <button className="project-item-select" onClick={() => void harness.selectProject(project.id)}>
                           <Folder size={15} className="project-folder-icon" />
                           <span className="project-item-title">{project.title}</span>
-                          {project.folderName && <span className="project-folder-name">{project.folderName}</span>}
-                          <ChevronDown size={14} className={isActive ? 'project-chevron open' : 'project-chevron'} />
+                          <span className="project-folder-name">{project.sessions.length} 会话</span>
                         </button>
-                        <button
-                          className="project-delete"
-                          title={language === 'zh' ? '删除项目' : 'Delete project'}
-                          onClick={() => deleteProject(project.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <button className="project-delete" title="删除项目" onClick={() => {
+                          if (window.confirm(`确定删除项目「${project.title}」吗？`)) void harness.deleteProject(project.id);
+                        }}><Trash2 size={14} /></button>
                       </div>
-
                       {isActive && (
                         <div className="session-list">
                           {project.sessions.map(session => (
-                            <div
-                              key={session.id}
-                              className={`session-item ${session.id === activeSession?.id ? 'is-active' : ''}`}
-                            >
-                              <button
-                                className="session-item-select"
-                                onClick={() => setActiveSessionId(session.id)}
-                              >
-                                <MessageSquareIcon />
+                            <div key={session.id} className={`session-item ${session.id === activeSession?.id ? 'is-active' : ''}`}>
+                              <button className="session-item-select" onClick={() => void harness.selectSession(session.id)}>
+                                <MessageSquare size={14} />
                                 <span className="session-item-title">{session.title}</span>
                                 <span className="session-message-count">{session.messages.length}</span>
                               </button>
-                              <button
-                                className="session-delete"
-                                title={language === 'zh' ? '删除会话' : 'Delete session'}
-                                onClick={() => deleteSession(session.id)}
-                              >
-                                <Trash2 size={13} />
-                              </button>
+                              <button className="session-delete" title="删除会话" onClick={() => {
+                                if (window.confirm(`确定删除会话「${session.title}」吗？`)) void harness.deleteSession(session.id);
+                              }}><Trash2 size={13} /></button>
                             </div>
                           ))}
-                          <button className="session-add" onClick={createSession}>
-                            <Plus size={13} /> {language === 'zh' ? '新建会话' : 'New Session'}
-                          </button>
+                          <button className="session-add" onClick={() => void harness.createSession()}><Plus size={13} /> 新建会话</button>
                         </div>
                       )}
                     </div>
@@ -804,16 +352,9 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
                 })}
               </div>
 
-              {projects.length === 0 && (
-                <div className="project-empty-hint">
-                  {language === 'zh' ? '还没有项目，点击上方「新建项目」开始创建' : 'No projects yet — click "New Project" to get started'}
-                </div>
-              )}
-
               <div className="project-left-footer">
                 <button className="dsh-settings-button" onClick={() => setShowSettings(true)}>
-                  <Settings size={15} />
-                  {language === 'zh' ? '设置' : 'Settings'}
+                  <Settings size={15} /> 设置
                   <span className="settings-badge">{permissionLabel(permission)} · {temperatureLabel[temperature]}</span>
                 </button>
               </div>
@@ -822,349 +363,176 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
           {!leftCollapsed && <div className="resizer left" onMouseDown={startDrag('left')} />}
         </aside>
 
-        {/* ===== 中间：模型对话区域 ===== */}
         <section className="dsh-main project-chat-main">
-          {activeProject && activeSession ? (
-            <div className="chat-panel">
-              <header className="chat-panel-header">
+          <div className="chat-panel">
+            <header className="chat-panel-header">
               <div className="chat-panel-titles">
                 <h1>{activeProject?.title || '未选择项目'}</h1>
-                <p>{activeSession?.title || '未选择会话'}{activeProject?.folderName ? ` · ${activeProject.folderName}` : ''}</p>
+                <p>{activeSession?.title || '未选择会话'} · {permissionLabel(permission)}</p>
               </div>
               <div className="chat-panel-tools">
                 <label className="chat-model-picker">
-                  <span>{selectedModel || (modelServices[0]?.models[0]?.displayName || '选择模型')}</span>
-                  <select
-                    value=""
-                    onChange={event => {
-                      const [serviceId, modelId] = event.target.value.split('::');
-                      if (serviceId && modelId) void activateModel(serviceId, modelId);
-                    }}
-                  >
-                    <option value="">{language === 'zh' ? '切换模型' : 'Switch model'}</option>
+                  <span>{selectedModel || modelServices[0]?.models[0]?.displayName || '选择模型'}</span>
+                  <select value="" onChange={event => {
+                    const [serviceId, modelId] = event.target.value.split('::');
+                    if (serviceId && modelId) void activateModel(serviceId, modelId);
+                  }}>
+                    <option value="">切换模型</option>
                     {modelServices.map(service => (
                       <optgroup key={service.id} label={service.displayName}>
-                        {service.models.map(model => (
-                          <option key={model.id} value={`${service.id}::${model.modelId}`}>
-                            {model.displayName || model.modelId} · {model.reasoning === 'low' ? '低' : model.reasoning === 'high' ? '高' : '中'}
-                          </option>
-                        ))}
+                        {service.models.map(model => <option key={model.id} value={`${service.id}::${model.modelId}`}>{model.displayName || model.modelId}</option>)}
                       </optgroup>
                     ))}
                   </select>
                 </label>
-                <button className="dsh-icon-button" onClick={() => setRightOpen(true)} title="打开详情栏">
-                  <PanelRightOpen size={16} />
-                </button>
+                <button className="dsh-icon-button" onClick={() => setRightOpen(true)} title="打开详情栏"><PanelRightOpen size={16} /></button>
               </div>
             </header>
 
-            <div ref={chatMessagesRef} className="chat-messages">
+            <div ref={messagesRef} className="chat-messages">
               {activeMessages.length === 0 ? (
-                <div className="chat-empty">
-                  <Sparkles size={28} />
-                  <p>{language === 'zh' ? '开始和模型对话吧。你可以描述项目目标，或直接问当前引导问题。' : 'Start a conversation with the model.'}</p>
-                </div>
-              ) : (
-                activeMessages.map(message => (
-                  <div key={message.id} className={`chat-message-row ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}>
-                    <div className={message.role === 'user' ? 'coach-message-user' : 'coach-message-assistant'}>
-                      {message.content || (isStreaming ? '...' : '')}
-                    </div>
+                <div className="chat-empty"><Sparkles size={28} /><p>{language === 'zh' ? '描述项目目标，Agent 会按需检索文件并推进交付。' : 'Describe the project goal to start.'}</p></div>
+              ) : activeMessages.map(message => (
+                <div key={message.id} className={`chat-message-row ${message.role === 'user' ? 'is-user' : message.role === 'tool' ? 'is-tool' : 'is-assistant'}`}>
+                  <div className={message.role === 'user' ? 'coach-message-user' : 'coach-message-assistant'}>
+                    {message.role === 'tool' ? <span className="tool-message-mark">工具结果</span> : null}
+                    {message.content}
                   </div>
-                ))
-              )}
+                </div>
+              ))}
+              {toolCalls.map(call => (
+                <div key={call.id} className={`agent-tool-card ${call.status}`}>
+                  <div><Database size={14} /><strong>{call.name}</strong><span>{statusLabel(call.status)}</span></div>
+                  <pre>{JSON.stringify(call.arguments, null, 2).slice(0, 1200)}</pre>
+                  {call.error && <p>{call.error}</p>}
+                </div>
+              ))}
             </div>
 
+            {activeRun && (
+              <div className="agent-status-strip">
+                <Activity size={14} />
+                <span>{statusLabel(activeRun.status)} · {activeRun.iterations}/6 轮</span>
+                {activeRun.status === 'waiting_approval' && approval ? (
+                  <>
+                    <span className="approval-path">{approval.path}</span>
+                    <button className="coach-primary-button" disabled={busy} onClick={() => void harness.approve(true)}>批准写入</button>
+                    <button className="coach-secondary-button" disabled={busy} onClick={() => void harness.approve(false)}>拒绝</button>
+                  </>
+                ) : activeRun.status === 'waiting_tool' ? (
+                  <button className="coach-primary-button" disabled={isRunning} onClick={() => void harness.resume(TEMPERATURE_VALUES[temperature])}>继续执行</button>
+                ) : ['failed', 'rejected'].includes(activeRun.status) ? (
+                  <button className="coach-secondary-button" onClick={() => void harness.retry(TEMPERATURE_VALUES[temperature], permission)}>重试</button>
+                ) : null}
+                {['running', 'waiting_approval', 'waiting_tool'].includes(activeRun.status) && (
+                  <button className="coach-secondary-button" onClick={() => void harness.cancel()}>停止</button>
+                )}
+              </div>
+            )}
+
             {error && (
-                <div className="chat-error-bar">
-                  <span>{error}</span>
-                  <button onClick={clearError}>关闭</button>
-                </div>
-              )}
-              <footer className="chat-composer">
-              <textarea
-                ref={inputRef}
-                className="coach-textarea"
-                rows={3}
-                value={chatInput}
-                disabled={isStreaming}
-                placeholder={language === 'zh' ? '输入你的问题或项目指令…' : 'Type your message…'}
-                onChange={event => setChatInput(event.target.value)}
-                onKeyDown={event => {
-                  if (event.key === 'Enter' && !event.altKey) {
-                      event.preventDefault();
-                      handleSend();
-                    }
-                }}
-              />
+              <div className="chat-error-bar"><span>{error}</span><button onClick={harness.clearError}>关闭</button></div>
+            )}
+
+            <footer className="chat-composer">
+              {currentRun?.status === 'completed' && <div className="chat-archived-bar">该路径已完成归档，仅可查看。</div>}
+              <textarea ref={inputRef} className="coach-textarea" rows={3} value={chatInput} disabled={isRunning || currentRun?.status === 'completed'} placeholder="输入项目指令…" onChange={event => setChatInput(event.target.value)} onKeyDown={event => {
+                if (event.key === 'Enter' && !event.altKey) {
+                  event.preventDefault();
+                  handleSend();
+                }
+              }} />
               <div className="chat-composer-actions">
                 <span className="chat-composer-hint">Enter 发送 · Alt+Enter 换行</span>
-                <button
-                  className="coach-primary-button"
-                  disabled={!chatInput.trim() || isStreaming}
-                  onClick={handleSend}
-                >
-                  {isStreaming ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  {language === 'zh' ? '发送' : 'Send'}
+                <button className="coach-primary-button" disabled={!chatInput.trim() || isRunning || currentRun?.status === 'completed'} onClick={handleSend}>
+                  {isRunning ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} 发送
                 </button>
               </div>
             </footer>
           </div>
-          ) : (
-            <div className="chat-panel">
-              <div className="chat-empty">
-                {activeProject ? <MessageSquareIcon /> : <Folder size={28} />}
-                <p>
-                  {activeProject
-                    ? (language === 'zh' ? '这个项目还没有会话。点击下方按钮新建一个会话，开始与模型对话。' : 'This project has no sessions yet. Create one to start chatting with the model.')
-                    : (language === 'zh' ? '还没有项目和会话。点击下方按钮创建你的第一个项目，然后新建会话开始对话。' : 'No projects or sessions yet. Create your first project, then add a session to start chatting.')}
-                </p>
-                <button
-                  className="coach-primary-button"
-                  onClick={() => {
-                    if (activeProject) {
-                      createSession();
-                    } else {
-                      setShowNewProject(true);
-                    }
-                  }}
-                >
-                  <Plus size={14} />
-                  {activeProject
-                    ? (language === 'zh' ? '新建会话' : 'New Session')
-                    : (language === 'zh' ? '新建项目' : 'New Project')}
-                </button>
-              </div>
-            </div>
-          )}
         </section>
 
-        {/* ===== 右侧：详情 / 文档库 ===== */}
         {rightOpen && <div className="resizer right" onMouseDown={startDrag('right')} />}
         <aside className={rightOpen ? 'dsh-right project-right' : 'dsh-right closed'}>
           {rightOpen ? (
             <section className="project-right-panel">
               <header className="project-right-header">
-                <div className="project-right-tabs">
-                  <button className={rightTab === 'guide' ? 'is-active' : ''} onClick={() => setRightTab('guide')}>
-                    <FileText size={14} /> {language === 'zh' ? '项目引导' : 'Guide'}
-                  </button>
-                  <button className={rightTab === 'docs' ? 'is-active' : ''} onClick={() => setRightTab('docs')}>
-                    <FolderOpen size={14} /> {language === 'zh' ? '临时文档库' : 'Temp Docs'}
-                  </button>
+                <div className="project-right-tabs harness-tabs">
+                  {(['guide', 'context', 'files', 'docs', 'trace'] as RightTab[]).map(tab => (
+                    <button key={tab} className={rightTab === tab ? 'is-active' : ''} onClick={() => setRightTab(tab)}>
+                      {tab === 'guide' ? <FileText size={14} /> : tab === 'context' ? <Gauge size={14} /> : tab === 'files' ? <FolderOpen size={14} /> : tab === 'docs' ? <Save size={14} /> : <Activity size={14} />}
+                      {{ guide: '引导', context: '上下文', files: '文件', docs: '文档', trace: 'Trace' }[tab]}
+                    </button>
+                  ))}
                 </div>
                 <div className="project-right-header-actions">
-                  <button className="daily-summary-button" onClick={generateDailyReport}>
-                    <Sparkles size={14} /> {language === 'zh' ? '每日总结' : 'Daily Summary'}
-                  </button>
-                  <button className="dsh-icon-button" onClick={() => setRightOpen(false)} title="关闭详情栏">
-                    <PanelRightClose size={15} />
-                  </button>
+                  <button className="daily-summary-button" onClick={() => void generateDailyReport()}><Sparkles size={14} /> 每日总结</button>
+                  <button className="dsh-icon-button" onClick={() => setRightOpen(false)} title="关闭详情栏"><PanelRightClose size={15} /></button>
                 </div>
               </header>
 
               <div className="project-right-body">
-                {rightTab === 'guide' ? (
+                {rightTab === 'guide' && currentRun && (
                   <div className="guide-panel">
-                    {currentRun ? (
-                      <>
-                        <div className="guide-run-header">
-                          <h3>{currentRun.title}</h3>
-                          <span className={currentRun.status === 'completed' ? 'guide-status done' : 'guide-status'}>{currentRun.status === 'completed' ? '已完成' : '进行中'}</span>
+                    <div className="guide-run-header"><h3>{currentRun.title}</h3><span className={currentRun.status === 'completed' ? 'guide-status done' : 'guide-status'}>{currentRun.status === 'completed' ? '已完成' : '进行中'}</span></div>
+                    <div className="guide-progress"><div className="guide-progress-bar" style={{ width: `${(currentRun.steps.filter(step => step.isCompleted).length / currentRun.steps.length) * 100}%` }} /></div>
+                    <p className="guide-progress-text">{currentRun.steps.filter(step => step.isCompleted).length} / {currentRun.steps.length} 节点</p>
+                    <div className="guide-meta-grid"><div><span>阻塞点</span><p>{currentRun.blocker || '无'}</p></div><div><span>下一个最小动作</span><p>{currentRun.nextAction || '无'}</p></div></div>
+                    {currentRun.status !== 'completed' && currentRun.currentStep && (
+                      <div className="guide-artifact-box">
+                        <h4>当前交付物</h4><p className="guide-artifact-title">{currentRun.currentStep.requiredArtifact}</p>
+                        <textarea className="coach-textarea guide-artifact-textarea" rows={5} value={artifactDraft} onChange={event => setArtifactDraft(event.target.value)} />
+                        <div className="guide-artifact-actions">
+                          <button className="coach-secondary-button" disabled={busy} onClick={() => void patchStep(currentRun.currentStep.id, currentRun.currentStep.artifactTitle || currentRun.currentStep.requiredArtifact, artifactDraft, false)}><Save size={14} /> 保存草稿</button>
+                          <button className="coach-primary-button" disabled={busy || artifactDraft.trim().length < 20} onClick={() => void patchStep(currentRun.currentStep.id, currentRun.currentStep.artifactTitle || currentRun.currentStep.requiredArtifact, artifactDraft, true)}><CheckCircle2 size={14} /> 完成节点</button>
                         </div>
-                        <div className="guide-progress">
-                          <div
-                            className="guide-progress-bar"
-                            style={{ width: `${(currentRun.steps.filter(step => step.isCompleted).length / currentRun.steps.length) * 100}%` }}
-                          />
-                        </div>
-                        <p className="guide-progress-text">
-                          {currentRun.steps.filter(step => step.isCompleted).length} / {currentRun.steps.length} 节点
-                        </p>
-
-                        <div className="guide-meta-grid">
-                          <div>
-                            <span>阻塞点</span>
-                            <p>{currentRun.blocker || '无'}</p>
-                          </div>
-                          <div>
-                            <span>下一个最小动作</span>
-                            <p>{currentRun.nextAction || '无'}</p>
-                          </div>
-                        </div>
-
-                        <div className="guide-steps">
-                          <h4>{language === 'zh' ? '节点进度' : 'Steps'}</h4>
-                          {currentRun.steps.map(step => (
-                            <div
-                              key={step.id}
-                              className={`guide-step ${step.id === currentRun.currentStep?.id ? 'is-current' : ''} ${step.isCompleted ? 'is-done' : ''}`}
-                            >
-                              <span className="guide-step-icon">
-                                {step.isCompleted ? <CheckCircle2 size={14} /> : <span className="guide-step-order">{step.order}</span>}
-                              </span>
-                              <div className="guide-step-body">
-                                <strong>{step.order}. {step.title}</strong>
-                                {step.id === currentRun.currentStep?.id && <p>{currentRun.currentStep.instructions}</p>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {currentRun.currentStep && currentRun.status !== 'completed' && (
-                          <div className="guide-artifact-box">
-                            <h4>{language === 'zh' ? '当前交付物' : 'Current Artifact'}</h4>
-                            <p className="guide-artifact-title">{currentRun.currentStep.requiredArtifact}</p>
-                              <textarea
-                                className="coach-textarea guide-artifact-textarea"
-                                rows={4}
-                                value={artifactDraft}
-                                onChange={event => setArtifactDraft(event.target.value)}
-                                  onBlur={() => {
-                                    if (currentRun?.currentStep) {
-                                      void patchStep(
-                                        currentRun.currentStep.id,
-                                        currentRun.currentStep.artifactTitle || currentRun.currentStep.requiredArtifact,
-                                        artifactDraft,
-                                        false,
-                                      );
-                                    }
-                                  }}
-                                placeholder={language === 'zh' ? '填写当前节点交付物内容…' : 'Write the artifact content…'}
-                              />
-                            <div className="guide-artifact-actions">
-                              <button
-                                className="coach-secondary-button"
-                                disabled={isBusy}
-                                onClick={() => void patchStep(
-                                  currentRun.currentStep.id,
-                                  currentRun.currentStep.artifactTitle || currentRun.currentStep.requiredArtifact,
-                                  currentRun.currentStep.artifactContent,
-                                  false,
-                                )}
-                              >
-                                <Save size={14} /> {language === 'zh' ? '保存草稿' : 'Save Draft'}
-                              </button>
-                              <button
-                                className="coach-primary-button"
-                                disabled={isBusy || (artifactDraft || '').trim().length < 20}
-                                onClick={() => void patchStep(
-                                  currentRun.currentStep.id,
-                                  currentRun.currentStep.artifactTitle || currentRun.currentStep.requiredArtifact,
-                                  currentRun.currentStep.artifactContent,
-                                  true,
-                                )}
-                              >
-                                <CheckCircle2 size={14} /> {language === 'zh' ? '完成节点' : 'Complete'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <div className="guide-empty">{language === 'zh' ? '暂无项目引导数据' : 'No guide data'}</div>
+                      </div>
                     )}
                   </div>
-                ) : (
-                  <div className="docs-panel">
-                      <div className="docs-toolbar">
-                        <input ref={uploadInputRef} type="file" multiple style={{ display: 'none' }} onChange={event => void uploadFiles(event.target.files)} />
-                        <button className="coach-secondary-button" onClick={openUploadPicker}>
-                          <Upload size={14} /> {language === 'zh' ? '上传文件' : 'Upload Files'}
-                        </button>
-                      </div>
+                )}
 
-                      {uploadedFiles.length > 0 && (
-                        <div className="docs-section">
-                          <h4>{language === 'zh' ? '上传的文件' : 'Uploaded Files'}</h4>
-                          <div className="docs-list">
-                            {uploadedFiles.map(file => (
-                              <button
-                                key={file.id}
-                                className={`doc-item ${activeUploadedFile?.id === file.id ? 'is-active' : ''}`}
-                                onClick={() => { setActiveUploadedId(file.id); setActiveReportId(null); }}
-                              >
-                                <FileText size={15} />
-                                <span>{file.name}</span>
-                                <span className="doc-delete" role="button" tabIndex={0} title="删除文件" onClick={event => { event.stopPropagation(); deleteUploadedFile(file.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); deleteUploadedFile(file.id); } }}><Trash2 size={14} /></span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="docs-section">
-                        <h4>{language === 'zh' ? '生成的报告' : 'Generated Reports'}</h4>
-                    <div className="docs-list">
-                      {reports.length === 0 ? (
-                        <div className="docs-empty">
-                          <FileText size={24} />
-                          <p>{language === 'zh' ? '还没有报告。可以上传文件，或点击右上角“每日总结”生成今日报告。' : 'No reports yet. Upload files or generate a daily summary.'}</p>
-                        </div>
-                      ) : (
-                        reports.map(report => (
-                          <button
-                            key={report.id}
-                            className={`doc-item ${report.id === activeReport?.id ? 'is-active' : ''}`}
-                            onClick={() => setActiveReportId(report.id)}
-                          >
-                            <FileText size={15} />
-                            <span>{report.title}</span><span className="doc-delete" role="button" tabIndex={0} title="删除文档" onClick={event => { event.stopPropagation(); deleteReport(report.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); deleteReport(report.id); } }}><Trash2 size={14} /></span>
-                          </button>
-                        ))
-                      )}
+                {rightTab === 'context' && (
+                  <div className="harness-side-panel">
+                    <div className="context-meter"><span>{contextPercent}%</span><div><i style={{ width: `${contextPercent}%` }} /></div></div>
+                    <p>{context ? `${context.totalTokens}/${context.budgetTokens} tokens · ${context.historyMessageCount}/${context.totalMessageCount} messages` : '暂无上下文数据'}</p>
+                    <button className="coach-secondary-button" disabled={busy} onClick={() => void harness.compressContext()}>压缩上下文</button>
+                    <div className="context-component-list">
+                      {(context?.components || []).map(component => (
+                        <div key={component.name}><span>{component.name}</span><strong>{component.tokens}</strong>{component.truncated ? <em>截断</em> : null}</div>
+                      ))}
                     </div>
+                    <div className="memory-editor"><textarea value={memoryDraft} onChange={event => setMemoryDraft(event.target.value)} placeholder="写入项目长期记忆…" /><button className="coach-primary-button" disabled={busy || !memoryDraft.trim()} onClick={() => { void harness.addMemory(memoryDraft); setMemoryDraft(''); }}>保存记忆</button></div>
+                    <div className="memory-list">{memories.map(memory => <div key={memory.id}><strong>{memory.memoryType}</strong><p>{memory.content}</p></div>)}</div>
+                  </div>
+                )}
 
-                    </div>
+                {rightTab === 'files' && (
+                  <div className="harness-side-panel">
+                    <button className="coach-secondary-button" onClick={openFolderPicker}><Upload size={14} /> 上传文本快照</button>
+                    <div className="file-list">{files.map(file => <div key={file.id}><FileText size={15} /><span>{file.path}</span><strong>{Math.ceil(file.size / 1024)}KB</strong></div>)}</div>
+                    {files.length === 0 && <p className="side-empty">项目沙箱暂无文件。</p>}
+                  </div>
+                )}
 
-                      {activeUploadedFile && !activeReport && (
-                        <div className="doc-viewer">
-                          <div className="doc-viewer-head">
-                            <h3>{activeUploadedFile.name}</h3>
-                            <span className="doc-file-size">{Math.ceil(activeUploadedFile.size / 1024)} KB</span>
-                          </div>
-                          <div className="doc-content file-content">
-                            <pre>{activeUploadedFile.content || '（无法读取文件内容或文件为空）'}</pre>
-                          </div>
-                        </div>
-                      )}
-
-                      {activeReport && (
-                      <div className="doc-viewer">
-                        <div className="doc-viewer-head">
-                          <h3>{activeReport.title}</h3>
-                          <div className="doc-downloads">
-                            <button className="coach-secondary-button" onClick={() => downloadMarkdown(activeReport.content)} title="下载 Markdown">
-                              <FileCode2 size={14} /> MD
-                            </button>
-                            <button className="coach-secondary-button" onClick={() => downloadWord(activeReport.content)} title="下载 Word">
-                              <FileDown size={14} /> Word
-                            </button>
-                            <button className="coach-secondary-button" onClick={() => downloadPdf(activeReport.content)} title="导出 PDF">
-                              <Download size={14} /> PDF
-                            </button>
-                          </div>
-                        </div>
-                        <div className="doc-logo">
-                          <span className="doc-logo-mark">J</span>
-                          <div>
-                            <strong>June AI</strong>
-                            <small>超级个体训练师 · 交付成果报告</small>
-                          </div>
-                        </div>
-                        <div className="doc-content">
-                          {activeReport.content.split('\n').map((line, index) => {
-                            if (line.startsWith('# ')) return <h1 key={index}>{line.slice(2)}</h1>;
-                            if (line.startsWith('## ')) return <h2 key={index}>{line.slice(3)}</h2>;
-                            if (line.startsWith('- ')) return <li key={index}>{line.slice(2)}</li>;
-                            if (line.startsWith('1. ') || line.startsWith('2. ') || line.startsWith('3. ')) return <li key={index}>{line.slice(3)}</li>;
-                            if (!line.trim()) return <div key={index} className="doc-blank" />;
-                            return <p key={index}>{line}</p>;
-                          })}
-                        </div>
+                {rightTab === 'docs' && (
+                  <div className="harness-side-panel">
+                    <div className="file-list">{documents.map(document => (
+                      <div key={document.id}>
+                        <FileText size={15} /><span>{document.title}</span>
+                        <a href={`/api/harness/documents/${document.id}/download`} className="doc-mini-download"><Download size={14} /></a>
+                        <button className="doc-mini-download" onClick={() => downloadWord(document.title, document.content)}><FileDown size={14} /></button>
+                        <button className="doc-mini-download" onClick={() => downloadPdf(document.title, document.content)}><Download size={14} /></button>
+                        <button className="doc-mini-delete" onClick={() => void harness.deleteDocument(document.id)}><Trash2 size={14} /></button>
                       </div>
-                    )}
+                    ))}</div>
+                    {documents.length === 0 && <p className="side-empty">暂无服务端文档。</p>}
+                  </div>
+                )}
+
+                {rightTab === 'trace' && (
+                  <div className="harness-side-panel trace-panel">
+                    {activeRun ? <p>{statusLabel(activeRun.status)} · {activeRun.iterations}/6</p> : <p className="side-empty">暂无执行记录。</p>}
+                    {runEvents.map(event => <div key={event.id} className="trace-event"><strong>{event.type}</strong><pre>{JSON.stringify(event.payload, null, 2).slice(0, 1200)}</pre></div>)}
                   </div>
                 )}
               </div>
@@ -1173,93 +541,35 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
         </aside>
       </div>
 
-
-      {/* ===== 设置弹层 ===== */}
       {showSettings && (
         <div className="settings-overlay" onClick={() => setShowSettings(false)}>
           <div className="settings-popover" onClick={event => event.stopPropagation()}>
-            <div className="settings-popover-head">
-              <h3><Settings size={16} /> {language === 'zh' ? '设置' : 'Settings'}</h3>
-              <button className="dsh-icon-button" onClick={() => setShowSettings(false)}><X size={15} /></button>
-            </div>
-
-            <div className="settings-section">
-              <h4>{language === 'zh' ? '权限' : 'Permission'}</h4>
-              <div className="permission-options">
-                {(['read-only', 'workspace-write', 'full-access'] as Permission[]).map(item => (
-                  <button
-                    key={item}
-                    className={`permission-option ${permission === item ? 'is-active' : ''}`}
-                    onClick={() => {
-                      setPermission(item);
-                      localStorage.setItem(PERMISSION_STORAGE_KEY, item);
-                    }}
-                  >
-                    {item === 'read-only' ? <Lock size={14} /> : item === 'workspace-write' ? <Save size={14} /> : <ShieldCheck size={14} />}
-                    {item === 'read-only' ? 'Read only' : item === 'workspace-write' ? 'Workspace write' : 'Full access'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="settings-section">
-              <h4>{language === 'zh' ? '模型温度' : 'Temperature'}</h4>
-              <div className="temperature-slider-row">
-                <span className={temperature === 'low' ? 'is-active' : ''}>低</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={2}
-                  step={1}
-                  value={temperature === 'low' ? 0 : temperature === 'medium' ? 1 : 2}
-                  onChange={event => {
-                    const value = Number(event.target.value);
-                    setTemperature(value === 0 ? 'low' : value === 1 ? 'medium' : 'high');
-                  }}
-                />
-                <span className={temperature === 'high' ? 'is-active' : ''}>高</span>
-              </div>
-              <p className="settings-hint">
-                {temperature === 'high'
-                  ? language === 'zh' ? '高温度：讲得更细、更温柔，适合需要陪伴和详细解释的场景。' : 'High: more detailed and warmer.'
-                  : temperature === 'low'
-                    ? language === 'zh' ? '低温度：更理性、更高效，省略多余寒暄，但始终尊重客户。' : 'Low: more rational and efficient.'
-                    : language === 'zh' ? '中温度：在详细与高效之间保持平衡。' : 'Medium: balanced.'}
-              </p>
-            </div>
-
-            <div className="settings-section">
-              <button
-                className="coach-secondary-button settings-model-button"
-                onClick={() => setShowModelServices(true)}
-              >
-                <KeyRound size={14} /> {language === 'zh' ? '模型服务管理' : 'Model Services'}
-              </button>
-            </div>
+            <div className="settings-popover-head"><h3><Settings size={16} /> 设置</h3><button className="dsh-icon-button" onClick={() => setShowSettings(false)}><X size={15} /></button></div>
+            <div className="settings-section"><h4>权限</h4><div className="permission-options">
+              {(['read-only', 'workspace-write', 'full-access'] as HarnessPermission[]).map(item => (
+                <button key={item} className={`permission-option ${permission === item ? 'is-active' : ''}`} onClick={() => void harness.setPermission(item)}>
+                  {item === 'read-only' ? <Lock size={14} /> : item === 'workspace-write' ? <Save size={14} /> : <ShieldCheck size={14} />}{permissionLabel(item)}
+                </button>
+              ))}
+            </div></div>
+            <div className="settings-section"><h4>模型温度</h4><div className="temperature-slider-row">
+              <span className={temperature === 'low' ? 'is-active' : ''}>低</span>
+              <input type="range" min={0} max={2} step={1} value={temperature === 'low' ? 0 : temperature === 'medium' ? 1 : 2} onChange={event => setTemperature(Number(event.target.value) === 0 ? 'low' : Number(event.target.value) === 1 ? 'medium' : 'high')} />
+              <span className={temperature === 'high' ? 'is-active' : ''}>高</span>
+            </div></div>
+            <div className="settings-section"><button className="coach-secondary-button settings-model-button" onClick={() => setShowModelServices(true)}><KeyRound size={14} /> 模型服务管理</button></div>
           </div>
         </div>
       )}
 
-      {/* ===== 模型服务管理弹层 ===== */}
       {showModelServices && (
         <div className="settings-overlay" onClick={() => setShowModelServices(false)}>
           <div className="model-services-modal" onClick={event => event.stopPropagation()}>
-            <div className="model-services-modal-head">
-              <h3>{language === 'zh' ? '模型服务管理' : 'Model Services'}</h3>
-              <button className="dsh-icon-button" onClick={() => setShowModelServices(false)}><X size={15} /></button>
-            </div>
+            <div className="model-services-modal-head"><h3>模型服务管理</h3><button className="dsh-icon-button" onClick={() => setShowModelServices(false)}><X size={15} /></button></div>
             <ModelServicesPanel />
           </div>
         </div>
       )}
     </main>
-  );
-}
-
-function MessageSquareIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
   );
 }

@@ -26,6 +26,9 @@ services:
     environment:
       - JUNE_ENV=production
       - JUNE_DB_PATH=/data/june.db
+      - JUNE_DATABASE_URL=${JUNE_DATABASE_URL:-}
+      - JUNE_WORKSPACE_ROOT=/data/workspaces
+      - JUNE_METRICS_TOKEN=${JUNE_METRICS_TOKEN:-}
     volumes:
       - june-data:/data
     restart: unless-stopped
@@ -47,6 +50,18 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+
+  june-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - JUNE_DATABASE_URL=${JUNE_DATABASE_URL:-}
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    profiles:
+      - migration
 
 volumes:
   june-data:

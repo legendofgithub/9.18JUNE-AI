@@ -75,7 +75,7 @@ class TestDeepSeekService:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=FakeClient()):
+        with patch('app.services.deepseek.model_async_client', return_value=FakeClient()):
             result = ''.join([c async for c in svc.chat(
                 messages=[{"role": "user", "content": "?"}], api_key="sk-fake")])
             assert result == 'AB'
@@ -96,7 +96,7 @@ class TestDeepSeekService:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=FakeClient()):
+        with patch('app.services.deepseek.model_async_client', return_value=FakeClient()):
             with pytest.raises(Exception, match='LLM API error'):
                 async for _ in svc.chat(messages=[{"role": "user", "content": "?"}], api_key="sk-fake"):
                     pass
@@ -120,7 +120,7 @@ class TestDeepSeekService:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=FakeClient()):
+        with patch('app.services.deepseek.model_async_client', return_value=FakeClient()):
             async for _ in svc.chat(messages=[{"role": "system", "content": "sys"},
                                               {"role": "user", "content": "q"}], api_key="sk-fake"):
                 pass
@@ -147,7 +147,7 @@ class TestDeepSeekService:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=FakeClient()):
+        with patch('app.services.deepseek.model_async_client', return_value=FakeClient()):
             async for _ in svc.chat(messages=[{"role": "user", "content": "?"}], api_key='sk-fake'):
                 pass
         assert captured['payload']['model'] == 'glm-4-flash'
@@ -165,14 +165,14 @@ class TestDeepSeekService:
 
         class FakeClient:
             async def post(self, url, headers, json):
-                assert url == 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+                assert url == '/chat/completions'
                 assert json['model'] == 'glm-5.2'
                 assert json['stream'] is False
                 return FakeResponse()
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=FakeClient()):
+        with patch('app.services.deepseek.model_async_client', return_value=FakeClient()):
             result = await svc.test_connection()
         assert result['ok'] is True
         assert result['model'] == 'glm-5.2'
@@ -191,7 +191,7 @@ class TestDeepSeekService:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        with patch('httpx.AsyncClient', return_value=FakeClient()):
+        with patch('app.services.deepseek.model_async_client', return_value=FakeClient()):
             result = await svc.test_connection()
         assert result['ok'] is False
         assert '访问密钥未被 AI 工具接受' in result['error']

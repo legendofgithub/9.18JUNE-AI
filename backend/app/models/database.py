@@ -45,8 +45,12 @@ class SessionModel(Base):
     __tablename__ = "sessions"
 
     id = Column(String(36), primary_key=True, default=gen_id)
+    owner_id = Column(String(36), nullable=False, default="", index=True)
+    project_id = Column(String(36), index=True)
     title = Column(String(200), nullable=False, default="新对话")
     model = Column(String(50), nullable=False, default="deepseek-chat")
+    summary = Column(Text, nullable=False, default="")
+    permission = Column(String(20), nullable=False, default="read-only")
     created_at = Column(Float, default=lambda: time.time())
     updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
 
@@ -63,9 +67,13 @@ class MessageModel(Base):
 
     id = Column(String(36), primary_key=True, default=gen_id)
     session_id = Column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, default="", index=True)
+    project_id = Column(String(36), index=True)
     role = Column(String(20), nullable=False)  # user / assistant
     content = Column(Text, nullable=False, default="")
     thread_id = Column(String(100), nullable=False, default="main")  # 所属线程标识
+    tokens = Column(Integer, nullable=False, default=0)
+    meta_json = Column(Text, nullable=False, default="{}")
     timestamp = Column(Float, default=lambda: time.time())
 
     # 反向关联
@@ -125,6 +133,109 @@ class FileModel(Base):
 
     # 反向关联
     session = relationship("SessionModel", back_populates="files")
+
+
+class HarnessProjectModel(Base):
+    """A server-side, owner-scoped Harness project attached to one paid MVP run."""
+    __tablename__ = "harness_projects"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    owner_id = Column(String(36), nullable=False, index=True)
+    mvp_run_id = Column(String(36), ForeignKey("mvp_runs.id"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    metadata_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(Float, default=lambda: time.time())
+    updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
+
+
+class HarnessFileModel(Base):
+    """Indexed text snapshot inside a project sandbox."""
+    __tablename__ = "harness_files"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    project_id = Column(String(36), ForeignKey("harness_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, index=True)
+    path = Column(String(500), nullable=False)
+    name = Column(String(255), nullable=False)
+    mime_type = Column(String(120), nullable=False, default="text/plain")
+    size = Column(Integer, nullable=False, default=0)
+    content = Column(Text, nullable=False, default="")
+    created_at = Column(Float, default=lambda: time.time())
+    updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
+
+
+class HarnessMemoryModel(Base):
+    """Durable project memory injected into future contexts."""
+    __tablename__ = "harness_memories"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    project_id = Column(String(36), ForeignKey("harness_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, index=True)
+    memory_type = Column(String(30), nullable=False, default="fact")
+    content = Column(Text, nullable=False)
+    created_at = Column(Float, default=lambda: time.time())
+    updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
+
+
+class HarnessDocumentModel(Base):
+    """Generated project document kept on the server."""
+    __tablename__ = "harness_documents"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    project_id = Column(String(36), ForeignKey("harness_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False, default="")
+    created_at = Column(Float, default=lambda: time.time())
+    updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
+
+
+class AgentRunModel(Base):
+    """One durable Agent execution and its recoverable state."""
+    __tablename__ = "agent_runs"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    owner_id = Column(String(36), nullable=False, index=True)
+    project_id = Column(String(36), ForeignKey("harness_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    mvp_run_id = Column(String(36), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default="running", index=True)
+    permission = Column(String(20), nullable=False, default="read-only")
+    input = Column(Text, nullable=False, default="")
+    iterations = Column(Integer, nullable=False, default=0)
+    error = Column(Text, nullable=False, default="")
+    context_json = Column(Text, nullable=False, default="{}")
+    started_at = Column(Float, default=lambda: time.time())
+    finished_at = Column(Float, nullable=True)
+    updated_at = Column(Float, default=lambda: time.time(), onupdate=lambda: time.time())
+
+
+class AgentEventModel(Base):
+    """Append-only trace timeline for replay."""
+    __tablename__ = "agent_events"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    agent_run_id = Column(String(36), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String(40), nullable=False, index=True)
+    payload_json = Column(Text, nullable=False, default="{}")
+    created_at = Column(Float, default=lambda: time.time(), index=True)
+
+
+class ToolCallModel(Base):
+    """Tool invocation, including pending high-risk writes."""
+    __tablename__ = "tool_calls"
+
+    id = Column(String(36), primary_key=True, default=gen_id)
+    agent_run_id = Column(String(36), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, index=True)
+    name = Column(String(60), nullable=False, index=True)
+    arguments_json = Column(Text, nullable=False, default="{}")
+    result_json = Column(Text, nullable=False, default="{}")
+    status = Column(String(30), nullable=False, default="pending", index=True)
+    permission = Column(String(20), nullable=False, default="read-only")
+    error = Column(Text, nullable=False, default="")
+    started_at = Column(Float, default=lambda: time.time())
+    ended_at = Column(Float, nullable=True)
 
 
 class UserModel(Base):
@@ -385,16 +496,28 @@ class RunEventModel(Base):
 _engines: dict[str, object] = {}
 _session_factories: dict[str, sessionmaker] = {}
 _request_session: ContextVar[Session | None] = ContextVar("june_request_session", default=None)
+ALEMBIC_HEAD = "0002_enable_rls"
 
 
-def get_engine(db_path: str):
-    """获取数据库引擎（单例）"""
-    key = str(Path(db_path).resolve())
+def get_engine(connection_url: str):
+    """获取数据库引擎（单例；SQLite 兼容传入文件路径）"""
+    if "://" not in connection_url:
+        connection_url = f"sqlite:///{connection_url}"
+    if connection_url.startswith("sqlite:///"):
+        sqlite_path = connection_url[len("sqlite:///"):]
+        key = f"sqlite:///{Path(sqlite_path).resolve()}"
+    else:
+        key = connection_url
     if key not in _engines:
         engine = create_engine(
-            f"sqlite:///{db_path}",
-            connect_args={"check_same_thread": False, "timeout": 30},
+            key,
             echo=False,
+            pool_pre_ping=True,
+            **(
+                {"connect_args": {"check_same_thread": False, "timeout": 30}}
+                if key.startswith("sqlite")
+                else {"pool_recycle": 1800, "connect_args": {"sslmode": "require"}}
+            ),
         )
         _install_sqlite_pragmas(engine)
         _engines[key] = engine
@@ -414,11 +537,31 @@ def _install_sqlite_pragmas(engine) -> None:
         cursor.close()
 
 
-def init_db(db_path: str) -> None:
-    """初始化数据库：创建所有表"""
-    engine = get_engine(db_path)
+def init_db(connection_url: str) -> None:
+    """Initialize a local SQLite database, including legacy additive repairs."""
+    if "://" in connection_url and not connection_url.startswith("sqlite:///"):
+        raise RuntimeError("External databases must be created and upgraded with Alembic")
+    engine = get_engine(connection_url)
     Base.metadata.create_all(engine)
     _migrate_sqlite(engine)
+
+
+def verify_managed_database(connection_url: str) -> None:
+    """Ensure an external database has been upgraded to the app migration head."""
+    engine = get_engine(connection_url)
+    if engine.dialect.name == "sqlite":
+        init_db(connection_url)
+        return
+    inspector = inspect(engine)
+    if "alembic_version" not in inspector.get_table_names():
+        raise RuntimeError("External database is not initialized; run `alembic upgrade head` first")
+    with engine.connect() as connection:
+        versions = [row[0] for row in connection.execute(text("SELECT version_num FROM alembic_version"))]
+    if ALEMBIC_HEAD not in versions:
+        raise RuntimeError(
+            "External database schema is outdated or from a different release; "
+            "run `alembic upgrade head` before starting June AI"
+        )
 
 
 def _migrate_sqlite(engine) -> None:
@@ -426,6 +569,32 @@ def _migrate_sqlite(engine) -> None:
     inspector = inspect(engine)
     if "installed_skills" not in inspector.get_table_names():
         return
+    if "sessions" in inspector.get_table_names():
+        session_columns = {column["name"] for column in inspector.get_columns("sessions")}
+        with engine.begin() as connection:
+            if "owner_id" not in session_columns:
+                connection.execute(text("ALTER TABLE sessions ADD COLUMN owner_id VARCHAR(36) NOT NULL DEFAULT ''"))
+            if "project_id" not in session_columns:
+                connection.execute(text("ALTER TABLE sessions ADD COLUMN project_id VARCHAR(36)"))
+            if "summary" not in session_columns:
+                connection.execute(text("ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''"))
+            if "permission" not in session_columns:
+                connection.execute(text("ALTER TABLE sessions ADD COLUMN permission VARCHAR(20) NOT NULL DEFAULT 'read-only'"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_sessions_owner_id ON sessions (owner_id)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_sessions_project_id ON sessions (project_id)"))
+    if "messages" in inspector.get_table_names():
+        message_columns = {column["name"] for column in inspector.get_columns("messages")}
+        with engine.begin() as connection:
+            if "owner_id" not in message_columns:
+                connection.execute(text("ALTER TABLE messages ADD COLUMN owner_id VARCHAR(36) NOT NULL DEFAULT ''"))
+            if "project_id" not in message_columns:
+                connection.execute(text("ALTER TABLE messages ADD COLUMN project_id VARCHAR(36)"))
+            if "tokens" not in message_columns:
+                connection.execute(text("ALTER TABLE messages ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0"))
+            if "meta_json" not in message_columns:
+                connection.execute(text("ALTER TABLE messages ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_messages_owner_id ON messages (owner_id)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_messages_project_id ON messages (project_id)"))
     if "users" in inspector.get_table_names():
         user_columns = {column["name"] for column in inspector.get_columns("users")}
         with engine.begin() as connection:
@@ -502,9 +671,9 @@ def _rebuild_model_service_tables(engine) -> None:
         connection.close()
 
 
-def get_session(db_path: str) -> Session:
+def get_session(connection_url: str) -> Session:
     """获取新的数据库会话"""
-    return Session(get_engine(db_path))
+    return Session(get_engine(connection_url))
 
 
 class RequestScopedSession:
@@ -526,11 +695,11 @@ class RequestScopedSession:
 
 
 @contextmanager
-def request_db_scope(db_path: str):
+def request_db_scope(connection_url: str):
     """Create one SQLAlchemy session for a complete HTTP request/stream."""
-    key = str(Path(db_path).resolve())
+    key = connection_url if "://" in connection_url and not connection_url.startswith("sqlite:///") else str(Path(connection_url.removeprefix("sqlite:///")).resolve())
     if key not in _session_factories:
-        _session_factories[key] = sessionmaker(bind=get_engine(db_path), expire_on_commit=False)
+        _session_factories[key] = sessionmaker(bind=get_engine(connection_url), expire_on_commit=False)
     session = _session_factories[key]()
     token = _request_session.set(session)
     try:
@@ -544,15 +713,15 @@ def request_db_scope(db_path: str):
 class RequestSessionMiddleware:
     """Keep one request-scoped database session alive through SSE response bodies."""
 
-    def __init__(self, app, db_path: str):
+    def __init__(self, app, connection_url: str | None = None, db_path: str | None = None):
         self.app = app
-        self.db_path = db_path
+        self.connection_url = connection_url or (f"sqlite:///{db_path}" if db_path else "sqlite:///")
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        with request_db_scope(self.db_path):
+        with request_db_scope(self.connection_url):
             await self.app(scope, receive, send)
 
 

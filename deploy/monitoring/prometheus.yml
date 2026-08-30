@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  - job_name: "june-api"
+    metrics_path: /metrics
+    authorization:
+      credentials_file: /tmp/june_metrics_token
+    static_configs:
+      - targets: ["june-api:8000"]

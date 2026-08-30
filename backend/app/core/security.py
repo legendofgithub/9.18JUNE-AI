@@ -47,6 +47,22 @@ def _is_public_path(path: str) -> bool:
     return False
 
 
+def get_client_ip(request: Request) -> str:
+    """获取客户端真实 IP。
+
+    仅当「直连来源」属于受信反代（JUNE_TRUSTED_PROXIES）时才信任
+    X-Forwarded-For 首值；否则忽略 XFF，使用 TCP 连接的对端 IP。
+    这样可防止客户端伪造 X-Forwarded-For 绕过登录限流/锁定。
+    """
+    host = request.client.host if request.client else ""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        candidate = forwarded.split(",")[0].strip()
+        if candidate and host in settings.JUNE_TRUSTED_PROXIES:
+            return candidate
+    return host
+
+
 def generate_token() -> str:
     """生成 32 字符的随机 hex token"""
     return secrets.token_hex(32)
@@ -80,12 +96,12 @@ def verify_auth_token(token: str) -> str | None:
         return None
 
 
-def _byok_cipher():
+def _byok_cipher(secret: str | None = None):
     """Create the server-side cipher for user-owned model API keys."""
     from cryptography.fernet import Fernet
 
-    secret = settings.JUNE_AUTH_SECRET or settings.JUNE_API_TOKEN or "june-dev-byok-secret"
-    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+    material = secret or settings.JUNE_BYOK_KEY or "june-dev-byok-secret"
+    key = base64.urlsafe_b64encode(hashlib.sha256(material.encode()).digest())
     return Fernet(key)
 
 
@@ -99,7 +115,14 @@ def decrypt_api_key(encrypted_key: str) -> str:
     try:
         return _byok_cipher().decrypt(encrypted_key.encode()).decode()
     except Exception:
-        return ""
+        # Transparently read pre-split ciphertext after a deployment adds JUNE_BYOK_KEY.
+        legacy = settings.JUNE_AUTH_SECRET or settings.JUNE_API_TOKEN
+        if not legacy:
+            return ""
+        try:
+            return _byok_cipher(legacy).decrypt(encrypted_key.encode()).decode()
+        except Exception:
+            return ""
 
 
 def ensure_token() -> str:
@@ -118,8 +141,21 @@ def ensure_token() -> str:
     return token
 
 
-def _persist_token(token: str) -> None:
-    """将 token 写回 .env 文件（追加或更新）"""
+def ensure_byok_key() -> str:
+    """Persist an independent development/desktop BYOK encryption key."""
+    if settings.JUNE_BYOK_KEY:
+        return settings.JUNE_BYOK_KEY
+    if settings.is_production:
+        raise RuntimeError("生产模式必须配置 JUNE_BYOK_KEY")
+    key = secrets.token_hex(32)
+    _persist_env_value("JUNE_BYOK_KEY", key)
+    settings.JUNE_BYOK_KEY = key
+    print("[June] 已生成独立的 BYOK 加密密钥并写入 .env")
+    return key
+
+
+def _persist_env_value(name: str, value: str) -> None:
+    """将配置写回 .env 文件（追加或更新）"""
     import os
     from pathlib import Path
 
@@ -127,24 +163,28 @@ def _persist_token(token: str) -> None:
     try:
         if env_path.exists():
             content = env_path.read_text(encoding="utf-8")
-            if "JUNE_API_TOKEN=" in content:
+            if f"{name}=" in content:
                 # 更新已有行
                 lines = content.split("\n")
                 new_lines = []
                 for line in lines:
-                    if line.startswith("JUNE_API_TOKEN="):
-                        new_lines.append(f"JUNE_API_TOKEN={token}")
+                    if line.startswith(f"{name}="):
+                        new_lines.append(f"{name}={value}")
                     else:
                         new_lines.append(line)
                 env_path.write_text("\n".join(new_lines), encoding="utf-8")
             else:
                 # 追加
                 with open(env_path, "a", encoding="utf-8") as f:
-                    f.write(f"\nJUNE_API_TOKEN={token}\n")
+                    f.write(f"\n{name}={value}\n")
         else:
-            env_path.write_text(f"JUNE_API_TOKEN={token}\n", encoding="utf-8")
+            env_path.write_text(f"{name}={value}\n", encoding="utf-8")
     except Exception:
         pass  # 写入失败不影响运行，token 在内存中仍然有效
+
+
+def _persist_token(token: str) -> None:
+    _persist_env_value("JUNE_API_TOKEN", token)
 
 
 class TokenAuthMiddleware(BaseHTTPMiddleware):
@@ -180,6 +220,15 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             owner_id = verify_auth_token(token)
             if token and owner_id:
+                request.state.owner_id = owner_id
+                request.state.auth_scheme = "user"
+                return await call_next(request)
+
+        # 方式二：URL 参数 ?token=（EventSource / SSE 不支持自定义 Header，登录态走 query）
+        query_token = request.query_params.get("token")
+        if query_token:
+            owner_id = verify_auth_token(query_token)
+            if owner_id:
                 request.state.owner_id = owner_id
                 request.state.auth_scheme = "user"
                 return await call_next(request)

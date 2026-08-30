@@ -276,7 +276,10 @@ export default function ModelServicesPanel() {
 
                 <footer className="model-edit-footer">
                   <button type="button" className="danger" onClick={() => {
-                    if (window.confirm(`确认移除 ${service.displayName}？`) && void remove(service.id)) setExpanded(null);
+                    if (window.confirm(`确认移除 ${service.displayName}？`)) {
+                      void remove(service.id);
+                      setExpanded(null);
+                    }
                   }}>移除</button>
                   <span>
                     {service.apiKeyReady && (

@@ -1,0 +1,14 @@
+route:
+  group_by: ["alertname", "job"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: "default"
+
+receivers:
+  - name: "default"
+    # 默认仅输出到容器 stdout；生产环境可在此配置 webhook / email / Slack。
+    # 示例：
+    # webhook_configs:
+    #   - url: "https://example.com/hooks/june-alerts"
+    #     send_resolved: true

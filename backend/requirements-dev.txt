@@ -1,0 +1,5 @@
+# 开发 / 测试依赖。安装后 `pytest tests -q` 可直接运行（无需额外猜测）。
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pip-audit==2.7.3

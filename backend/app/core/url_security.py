@@ -2,22 +2,23 @@
 
 import ipaddress
 import socket
+from dataclasses import dataclass
 from urllib.parse import urlparse
+
+import httpx
 
 from .config import settings
 from .exceptions import ValidationException
 
 
-_TRUSTED_MODEL_HOSTS = {
-    "open.bigmodel.cn",
-    "api.deepseek.com",
-    "api.openai.com",
-    "api.moonshot.cn",
-    "dashscope.aliyuncs.com",
-}
+@dataclass(frozen=True)
+class ValidatedModelEndpoint:
+    url: str
+    hostname: str
+    address: str
 
 
-def validate_model_base_url(raw_url: str) -> str:
+def validate_model_base_url_details(raw_url: str) -> ValidatedModelEndpoint:
     """Return a normalized base URL and reject local/private network targets."""
     value = (raw_url or "").strip().rstrip("/")
     if not value:
@@ -42,10 +43,8 @@ def validate_model_base_url(raw_url: str) -> str:
         raise ValidationException("生产环境 AI 工具服务地址必须使用 HTTPS")
 
     hostname = parsed.hostname.rstrip(".").lower()
-    if hostname in _TRUSTED_MODEL_HOSTS:
-        return value
-
     addresses = _resolve_hostname(hostname)
+    allowed_addresses = []
     for address in addresses:
         local_target = (
             address.is_loopback
@@ -60,7 +59,51 @@ def validate_model_base_url(raw_url: str) -> str:
         )
         if local_target and not local_dev_loopback:
             raise ValidationException("不能使用内网、本机或保留地址作为 AI 工具服务")
-    return value
+        if not local_target or local_dev_loopback:
+            allowed_addresses.append(address)
+    if not allowed_addresses:
+        raise ValidationException("AI 工具服务地址没有可用解析结果")
+    return ValidatedModelEndpoint(value, hostname, str(allowed_addresses[0]))
+
+
+def validate_model_base_url(raw_url: str) -> str:
+    return validate_model_base_url_details(raw_url).url
+
+
+class PinnedModelTransport(httpx.AsyncBaseTransport):
+    """Connect to the DNS answer accepted during SSRF validation.
+
+    The URL host is temporarily replaced with that IP. The original Host header
+    and TLS SNI are retained, so DNS cannot return a different answer between
+    validation and the actual connection.
+    """
+
+    def __init__(self, endpoint: ValidatedModelEndpoint):
+        self.endpoint = endpoint
+        self._transport = httpx.AsyncHTTPTransport(trust_env=False)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        request_hostname = (request.url.host or "").rstrip(".").lower()
+        if request_hostname != self.endpoint.hostname:
+            raise ValidationException("AI 工具请求地址与已校验地址不一致")
+        original_host = request.url.netloc.decode("ascii")
+        request.url = request.url.copy_with(host=self.endpoint.address)
+        request.headers["Host"] = original_host
+        request.extensions["sni_hostname"] = self.endpoint.hostname
+        return await self._transport.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._transport.aclose()
+
+
+def model_async_client(base_url: str, timeout: float) -> httpx.AsyncClient:
+    endpoint = validate_model_base_url_details(base_url)
+    return httpx.AsyncClient(
+        base_url=endpoint.url,
+        timeout=timeout,
+        transport=PinnedModelTransport(endpoint),
+        follow_redirects=False,
+    )
 
 
 def _resolve_hostname(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:

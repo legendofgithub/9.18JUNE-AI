@@ -16,7 +16,12 @@ class AuthService:
             raise ValidationException("邮箱格式不正确")
         if len(password) < 8:
             raise ValidationException("密码至少 8 位")
+        is_first_local_user = settings.is_desktop and not self.repo.list_users()
         user = self.repo.create_user(email, password, display_name)
+        if is_first_local_user:
+            user.is_admin = True
+            self.repo.db.commit()
+            self.repo.db.refresh(user)
         return self._user_response(user)
 
     def login(self, account: str, password: str, ip: str = "", user_agent: str = "") -> dict:

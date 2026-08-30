@@ -17,6 +17,9 @@ services:
     environment:
       - JUNE_ENV=production
       - JUNE_DB_PATH=/data/june.db
+      - JUNE_DATABASE_URL=${JUNE_DATABASE_URL:-}
+      - JUNE_WORKSPACE_ROOT=/data/workspaces
+      - JUNE_METRICS_TOKEN=${JUNE_METRICS_TOKEN:-}
       - JUNE_LOG_PATH=/data/logs
       - JUNE_PUBLIC_BASE_URL=${JUNE_PUBLIC_BASE_URL:-https://localhost}
       - JUNE_PAYMENT_PROVIDER=${JUNE_PAYMENT_PROVIDER:-stripe}
@@ -35,11 +38,15 @@ services:
     command: ["python", "scripts/backup.py", "--loop", "--interval-seconds", "${JUNE_BACKUP_INTERVAL_SECONDS:-86400}"]
     environment:
       - JUNE_DB_PATH=/data/june.db
+      - JUNE_DATABASE_URL=${JUNE_DATABASE_URL:-}
       - JUNE_BACKUP_DIR=/backups
       - JUNE_BACKUP_RETENTION=${JUNE_BACKUP_RETENTION:-14}
+      - JUNE_OFFSITE_BACKUP_DIR=${JUNE_OFFSITE_BACKUP_DIR:-}
     volumes:
       - june-data:/data:ro
       - june-backups:/backups
+      # If JUNE_OFFSITE_BACKUP_DIR points to a host/network path, mount it here, for example:
+      # - ${JUNE_OFFSITE_BACKUP_HOST_DIR:-./backups-offsite}:/backups-offsite
     restart: unless-stopped
     logging:
       driver: json-file

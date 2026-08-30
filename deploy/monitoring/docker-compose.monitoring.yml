@@ -1,0 +1,41 @@
+# Optional monitoring stack. Enable with:
+#   docker compose -f docker-compose.yml -f docker-compose.production.yml -f deploy/monitoring/docker-compose.monitoring.yml --profile monitoring up -d
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '%s' "$JUNE_METRICS_TOKEN" > /tmp/june_metrics_token;
+        exec prometheus --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+    environment:
+      JUNE_METRICS_TOKEN: ${JUNE_METRICS_TOKEN:-}
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - june-prometheus:/prometheus
+    restart: unless-stopped
+    expose:
+      - "9090"
+    profiles: ["monitoring"]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - june-alertmanager:/alertmanager
+    restart: unless-stopped
+    expose:
+      - "9093"
+    profiles: ["monitoring"]
+
+volumes:
+  june-prometheus:
+    driver: local
+  june-alertmanager:
+    driver: local

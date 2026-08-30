@@ -1,4 +1,5 @@
 import json
+import hmac
 import threading
 import time
 from pathlib import Path
@@ -17,6 +18,11 @@ class RuntimeMetrics:
             "http_requests_total": 0,
             "http_errors_total": 0,
             "sse_requests_total": 0,
+            "june_agent_runs_total": 0,
+            "june_agent_tool_calls_total": 0,
+            "june_agent_tool_failures_total": 0,
+            "june_agent_approvals_total": 0,
+            "june_agent_cancellations_total": 0,
         }
         self._lock = threading.Lock()
 
@@ -42,6 +48,16 @@ class RuntimeMetrics:
             f"june_http_errors_total {snapshot['http_errors_total']}",
             "# TYPE june_sse_requests_total counter",
             f"june_sse_requests_total {snapshot['sse_requests_total']}",
+            "# TYPE june_agent_runs_total counter",
+            f"june_agent_runs_total {snapshot['june_agent_runs_total']}",
+            "# TYPE june_agent_tool_calls_total counter",
+            f"june_agent_tool_calls_total {snapshot['june_agent_tool_calls_total']}",
+            "# TYPE june_agent_tool_failures_total counter",
+            f"june_agent_tool_failures_total {snapshot['june_agent_tool_failures_total']}",
+            "# TYPE june_agent_approvals_total counter",
+            f"june_agent_approvals_total {snapshot['june_agent_approvals_total']}",
+            "# TYPE june_agent_cancellations_total counter",
+            f"june_agent_cancellations_total {snapshot['june_agent_cancellations_total']}",
         ]
         return "\n".join(lines) + "\n"
 
@@ -55,6 +71,11 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path == "/metrics":
+            expected = settings.JUNE_METRICS_TOKEN or settings.JUNE_API_TOKEN
+            supplied = request.headers.get("authorization", "")
+            candidate = supplied[7:] if supplied.startswith("Bearer ") else request.headers.get("x-metrics-token", "")
+            if not expected or not candidate or not hmac.compare_digest(candidate, expected):
+                return PlainTextResponse("Not Found", status_code=404)
             return PlainTextResponse(self.metrics.prometheus(), media_type="text/plain; version=0.0.4")
 
         started = time.perf_counter()

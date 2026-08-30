@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 
 from ..core.exceptions import UnauthorizedException
 from ..core.response import success
+from ..core.security import get_client_ip
 from ..models.commerce_schemas import LoginRequest, RegisterRequest
 
 
@@ -20,8 +21,7 @@ async def register(body: RegisterRequest, request: Request):
 
 @router.post("/login")
 async def login(body: LoginRequest, request: Request):
-    forwarded = request.headers.get("x-forwarded-for", "")
-    ip = (forwarded.split(",")[0].strip() if forwarded else "") or (request.client.host if request.client else "")
+    ip = get_client_ip(request)
     result = request.app.state.auth_service.login(
         body.account,
         body.password,

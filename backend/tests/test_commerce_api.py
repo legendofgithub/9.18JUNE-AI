@@ -40,7 +40,7 @@ class FakeLLM:
     def set_api_key(self, key):
         pass
 
-    async def test_connection(self):
+    async def test_connection(self, model="", base_url="", api_key=""):
         return self.connection_result
 
     async def chat(self, messages, api_key="", model="", base_url="", temperature=0.7):
@@ -112,7 +112,10 @@ def buy_two_paths(client, user):
     confirmed = client.post(
         f"/api/orders/{order_id}/confirm",
         headers=auth_headers(user),
-        json={"provider_transaction_id": "tx-001"},
+        json={
+            "provider_transaction_id": "tx-001",
+            "signature": CommerceService.payment_signature(order_id, "tx-001"),
+        },
     )
     assert confirmed.status_code == 200
     return order_id
@@ -326,16 +329,29 @@ def test_payment_install_autorun_and_idempotency(tmp_path):
         repeat = client.post(
             f"/api/orders/{order_id}/confirm",
             headers=auth_headers(user),
-            json={"provider_transaction_id": "tx-001"},
+            json={
+                "provider_transaction_id": "tx-001",
+                "signature": CommerceService.payment_signature(order_id, "tx-001"),
+            },
         )
         assert repeat.status_code == 200
 
         wrong_repeat = client.post(
             f"/api/orders/{order_id}/confirm",
             headers=auth_headers(user),
-            json={"provider_transaction_id": "tx-other"},
+            json={
+                "provider_transaction_id": "tx-other",
+                "signature": CommerceService.payment_signature(order_id, "tx-other"),
+            },
         )
         assert wrong_repeat.status_code == 400
+
+        unsigned_repeat = client.post(
+            f"/api/orders/{order_id}/confirm",
+            headers=auth_headers(user),
+            json={"provider_transaction_id": "tx-001"},
+        )
+        assert unsigned_repeat.status_code == 400
 
         installed = client.post("/api/coach/start", headers=auth_headers(user), json={
             "model_name": "glm-5.2",

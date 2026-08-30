@@ -52,6 +52,35 @@ MVP_STEPS = [
     ("retrospective", "复盘转化、交付和下一轮迭代", "整理转化、交付、收款和改进点，决定下一轮最小实验。", "变现复盘报告"),
 ]
 
+PASSWORD_ITERATIONS = 600_000
+LEGACY_PASSWORD_ITERATIONS = 120_000
+
+
+def _pbkdf2(password: str, salt: bytes, iterations: int) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations).hex()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = _pbkdf2(password, bytes.fromhex(salt), PASSWORD_ITERATIONS)
+    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt}${digest}"
+
+
+def verify_password(password: str, password_hash: str, password_salt: str) -> bool:
+    try:
+        if password_hash.startswith("pbkdf2_sha256$"):
+            _, iterations_text, salt, digest = password_hash.split("$", 3)
+            iterations = int(iterations_text)
+            if iterations < PASSWORD_ITERATIONS:
+                return False
+            return secrets.compare_digest(_pbkdf2(password, bytes.fromhex(salt), iterations), digest)
+        return secrets.compare_digest(
+            _pbkdf2(password, bytes.fromhex(password_salt), LEGACY_PASSWORD_ITERATIONS),
+            password_hash,
+        )
+    except (ValueError, TypeError):
+        return False
+
 
 class CommerceRepository:
     def __init__(self, db: Session):
@@ -96,15 +125,14 @@ class CommerceRepository:
             raise ValidationException("该邮箱已注册")
         if normalized_identity and self.find_user_by_identity(normalized_identity) is not None:
             raise ValidationException("该账号名已注册")
-        salt = secrets.token_hex(16)
-        password_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 120_000).hex()
+        password_hash = hash_password(password)
         user = UserModel(
             id=str(uuid.uuid4()),
             email=normalized_email,
             identity=normalized_identity,
             display_name=display_name.strip() or normalized_email.split("@")[0],
             password_hash=password_hash,
-            password_salt=salt,
+            password_salt="",
             is_admin=is_admin,
         )
         self.db.add(user)
@@ -130,8 +158,7 @@ class CommerceRepository:
     def seed_admin(self, identity: str, email: str, password: str, display_name: str) -> UserModel:
         normalized_identity = identity.strip().lower()
         user = self.find_user_by_identity(normalized_identity) or self.find_user_by_email(email)
-        salt = secrets.token_hex(16)
-        password_hash = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 120_000).hex()
+        password_hash = hash_password(password)
         if user is None:
             user = UserModel(
                 id=str(uuid.uuid4()),
@@ -139,7 +166,7 @@ class CommerceRepository:
                 identity=normalized_identity,
                 display_name=display_name.strip() or normalized_identity,
                 password_hash=password_hash,
-                password_salt=salt,
+                password_salt="",
                 is_admin=True,
             )
             self.db.add(user)
@@ -148,7 +175,7 @@ class CommerceRepository:
             user.identity = normalized_identity
             user.display_name = display_name.strip() or normalized_identity
             user.password_hash = password_hash
-            user.password_salt = salt
+            user.password_salt = ""
             user.is_admin = True
         self.db.commit()
         self.db.refresh(user)
@@ -158,11 +185,12 @@ class CommerceRepository:
         user = self.find_login_user(account)
         if user is None:
             return None
-        candidate = hashlib.pbkdf2_hmac(
-            "sha256", password.encode(), bytes.fromhex(user.password_salt), 120_000
-        ).hex()
-        if not secrets.compare_digest(candidate, user.password_hash):
+        if not verify_password(password, user.password_hash, user.password_salt):
             return None
+        if not user.password_hash.startswith("pbkdf2_sha256$"):
+            user.password_hash = hash_password(password)
+            user.password_salt = ""
+            self.db.commit()
         return user
 
     def list_users(self, search: str = "") -> list[UserModel]:

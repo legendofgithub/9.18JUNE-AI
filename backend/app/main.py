@@ -10,6 +10,7 @@ June AI 应用入口 —— FastAPI 应用装配
 """
 import os
 import asyncio
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -21,23 +22,26 @@ from fastapi.responses import FileResponse, JSONResponse
 from .core.config import settings
 from .core.exceptions import JuneException
 from .core.observability import ObservabilityMiddleware, RuntimeMetrics
-from .core.security import TokenAuthMiddleware, ensure_token
+from .core.security import TokenAuthMiddleware, ensure_byok_key, ensure_token
 from .models.database import (
     RequestSessionMiddleware,
+    get_engine,
     get_request_scoped_session,
     init_db,
     request_db_scope,
+    verify_managed_database,
 )
 from .repositories import SessionRepository
 from .repositories.commerce_repo import CommerceRepository
-from .services import SessionService
+from .repositories.harness_repo import HarnessRepository
 from .services.admin_service import AdminService
+from .services.agent_service import AgentService
 from .services.auth_service import AuthService
 from .services.commerce_service import CommerceService
 from .services.mvp_service import MvpService
 from .services.deepseek import DeepSeekService
 from .thread_manager import thread_manager
-from .routes import admin, auth, commerce, sessions, models
+from .routes import admin, auth, commerce, harness, models
 
 
 @asynccontextmanager
@@ -54,18 +58,26 @@ async def lifespan(app: FastAPI):
         if settings.is_production:
             raise RuntimeError("生产模式配置校验失败，请检查 .env 文件")
 
-    # 初始化数据库
-    init_db(settings.db_path)
-    print(f"[June] 数据库已初始化: {settings.db_path}")
+    # 初始化数据库。外部 Postgres/Supabase 必须先显式执行 Alembic 迁移。
+    if settings.is_vercel_runtime and not settings.database_url:
+        raise RuntimeError("Vercel 部署必须配置 JUNE_DATABASE_URL（Supabase Postgres）")
+    if settings.database_url:
+        verify_managed_database(settings.database_url)
+        print("[June] 已连接托管数据库，并确认迁移版本")
+    else:
+        init_db(settings.connection_url)
+        print(f"[June] SQLite 数据库已初始化: {settings.db_path}")
 
     # 确保 API Token（开发模式自动生成）
     ensure_token()
+    ensure_byok_key()
 
     # 装配依赖链；仓储持有的代理会在每个请求内解析到独立 Session。
     db_session = get_request_scoped_session()
     session_repo = SessionRepository(db_session)
     commerce_repo = CommerceRepository(db_session)
-    with request_db_scope(settings.db_path):
+    harness_repo = HarnessRepository(db_session)
+    with request_db_scope(settings.connection_url):
         commerce_repo.seed_products()
         if settings.JUNE_ADMIN_PASSWORD:
             commerce_repo.seed_admin(
@@ -75,7 +87,6 @@ async def lifespan(app: FastAPI):
                 settings.JUNE_ADMIN_DISPLAY_NAME,
             )
     deepseek_service = DeepSeekService()
-    app.state.session_service = SessionService(session_repo, deepseek_service, thread_manager)
     app.state.deepseek_service = deepseek_service
     app.state.db_session = db_session
     app.state.commerce_repo = commerce_repo
@@ -83,6 +94,17 @@ async def lifespan(app: FastAPI):
     app.state.commerce_service = CommerceService(commerce_repo, deepseek_service)
     app.state.admin_service = AdminService(commerce_repo, app.state.auth_service)
     app.state.mvp_service = MvpService(commerce_repo, session_repo, deepseek_service, thread_manager)
+    app.state.agent_service = AgentService(
+        harness_repo,
+        commerce_repo,
+        deepseek_service,
+        Path(settings.workspace_root),
+        app.state.runtime_metrics,
+    )
+    with request_db_scope(settings.connection_url):
+        recovered = app.state.agent_service.recover_interrupted()
+    if recovered:
+        print(f"[June] 已把 {recovered} 个中断 Agent 执行标记为 failed(interrupted)")
     # 启动 ThreadManager
     await thread_manager.start_cleanup(interval=settings.THREAD_CLEANUP_INTERVAL)
     print(f"[June] ThreadManager 已启动（空闲超时: {thread_manager._idle_timeout}s）")
@@ -97,8 +119,9 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, "db_session"):
         app.state.db_session.close()
 
-    # 等待 SSE 流自然断开，避免客户端收到 RST
-    await asyncio.sleep(5)
+    # 本地/自托管等待 SSE 流自然断开；Vercel 关闭窗口只有 500ms。
+    if not settings.is_vercel_runtime:
+        await asyncio.sleep(5)
 
 
 # ── FastAPI 应用实例 ──
@@ -112,7 +135,7 @@ app = FastAPI(
 
 app.state.runtime_metrics = RuntimeMetrics()
 
-app.add_middleware(RequestSessionMiddleware, db_path=settings.db_path)
+app.add_middleware(RequestSessionMiddleware, connection_url=settings.connection_url)
 
 # ── 中间件 ──
 
@@ -148,14 +171,14 @@ async def june_exception_handler(request: Request, exc: JuneException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """兜底异常处理"""
+    """Log unexpected failures without exposing internals to clients."""
     import traceback
     traceback.print_exc()
     return JSONResponse(
         status_code=500,
         content={
             "code": 500,
-            "message": f"服务器内部错误: {str(exc)}",
+            "message": "服务器内部错误，请稍后重试",
             "data": None,
             "timestamp": int(__import__("time").time() * 1000),
         },
@@ -164,10 +187,10 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # ── 注册路由 ──
 
-app.include_router(sessions.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(commerce.router, prefix="/api")
+app.include_router(harness.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 
 
@@ -176,41 +199,43 @@ app.include_router(admin.router, prefix="/api")
 
 @app.get("/")
 async def root():
+    if (frontend_dist / "index.html").is_file():
+        return FileResponse(frontend_dist / "index.html")
     return {"name": "June AI API", "version": "2.0.0", "status": "running", "env": settings.JUNE_ENV}
 
 
 @app.get("/health")
 async def health():
-    """健康检查 —— 验证数据库可读写 + 线程状态"""
-    import sqlite3
+    """健康检查 —— 验证数据库连接 + 线程状态"""
+    from sqlalchemy import text
 
-    db_status = "disconnected"
+    db_status = "connected"
     try:
-        conn = sqlite3.connect(settings.db_path)
-        conn.execute("SELECT 1")
-        conn.close()
-        db_status = "connected"
+        engine = get_engine(settings.connection_url)
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
     except Exception as e:
-        db_status = f"error: {e}"
+        db_status = "error"
+        print(f"[June] Health database check failed: {type(e).__name__}")
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "db": db_status,
         "active_threads": thread_manager.active_count(),
-        "metrics": app.state.runtime_metrics.snapshot(),
+        "db": db_status,
     }
 
 
 @app.get("/api/status")
 async def system_status(request: Request):
     """系统状态端点 —— 返回版本、数据库状态、API 配置信息（需 Token）"""
-    import sqlite3
+    from sqlalchemy import text
 
     db_ok = False
     try:
-        conn = sqlite3.connect(settings.db_path)
-        conn.execute("SELECT 1")
-        conn.close()
+        engine = get_engine(settings.connection_url)
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
         pass
@@ -230,14 +255,9 @@ async def system_status(request: Request):
 
 # ── 前端静态文件托管（生产模式） ──
 
-frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if getattr(sys, "frozen", False):
+    frontend_dist = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "frontend" / "dist"
+else:
+    frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if frontend_dist.exists():
-    app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        """SPA 回退：所有非 /api 请求返回 index.html"""
-        file_path = frontend_dist / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(frontend_dist / "index.html")
+    app.frontend("/", directory=str(frontend_dist), fallback="index.html")

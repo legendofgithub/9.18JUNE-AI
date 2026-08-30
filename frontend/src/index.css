@@ -1642,6 +1642,16 @@ body {
   font-weight: 650;
 }
 
+.chat-archived-bar {
+  margin: 0 14px 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(15,118,110,.35);
+  border-radius: 8px;
+  background: rgba(15,118,110,.08);
+  color: #0f766e;
+  font-size: 12px;
+}
+
 /* 右侧详情 / 文档库 */
 .project-right-panel {
   display: flex;
@@ -2557,4 +2567,209 @@ body {
 
 .project-create-actions .project-create-button:hover:not(:disabled) {
   background: #f7f8fc;
+}
+
+/* Harness 执行与观测 */
+.project-workspace .harness-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+}
+
+.project-workspace .harness-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 4px;
+  font-size: 12px;
+}
+
+.project-workspace .harness-side-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-workspace .agent-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 6px 12px;
+  border-top: 1px solid #e3e6ef;
+  background: #f7f8fc;
+  color: #374151;
+  font-size: 12px;
+}
+
+.project-workspace .agent-status-strip .coach-primary-button,
+.project-workspace .agent-status-strip .coach-secondary-button {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.project-workspace .approval-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.project-workspace .agent-tool-card {
+  align-self: stretch;
+  margin: 6px 12px;
+  border: 1px solid #e3e6ef;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  overflow: hidden;
+}
+
+.project-workspace .agent-tool-card > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf0f5;
+  font-size: 12px;
+}
+
+.project-workspace .agent-tool-card.success > div span {
+  color: #0f766e;
+}
+
+.project-workspace .agent-tool-card.error > div span,
+.project-workspace .agent-tool-card.failed > div span {
+  color: #b91c1c;
+}
+
+.project-workspace .agent-tool-card pre {
+  max-height: 150px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  color: #374151;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.project-workspace .tool-message-mark {
+  display: block;
+  margin-bottom: 3px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.project-workspace .context-meter {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: #111827;
+  font-size: 12px;
+}
+
+.project-workspace .context-meter div {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3e6ef;
+  overflow: hidden;
+}
+
+.project-workspace .context-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+}
+
+.project-workspace .context-component-list,
+.project-workspace .file-list,
+.project-workspace .memory-list,
+.project-workspace .trace-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-workspace .context-component-list > div,
+.project-workspace .file-list > div,
+.project-workspace .memory-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf0f5;
+  color: #374151;
+  font-size: 12px;
+}
+
+.project-workspace .file-list > div {
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+}
+
+.project-workspace .file-list span,
+.project-workspace .memory-list p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-workspace .memory-list p {
+  grid-column: 1 / -1;
+  white-space: normal;
+}
+
+.project-workspace .memory-editor {
+  display: flex;
+  min-height: 96px;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.project-workspace .trace-event {
+  padding: 8px 0;
+  border-bottom: 1px solid #edf0f5;
+  color: #111827;
+  font-size: 12px;
+}
+
+.project-workspace .trace-event pre {
+  max-height: 130px;
+  overflow: auto;
+  color: #374151;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.project-workspace .side-empty {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.project-workspace .doc-mini-download,
+.project-workspace .doc-mini-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  color: #0f766e;
+  background: transparent;
+  cursor: pointer;
+}
+
+.project-workspace .doc-mini-delete {
+  color: #b91c1c;
 }

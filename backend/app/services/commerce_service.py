@@ -7,7 +7,7 @@ import httpx
 from ..core.config import settings
 from ..core.exceptions import ValidationException
 from ..core.security import decrypt_api_key, encrypt_api_key
-from ..core.url_security import validate_model_base_url
+from ..core.url_security import model_async_client, validate_model_base_url
 from ..models.database import EntitlementModel, InstalledSkillModel, MvpRunModel, OrderModel, ProductModel
 from ..models.database import ModelEntryModel, ModelServiceModel
 from ..repositories.commerce_repo import CommerceRepository
@@ -43,6 +43,7 @@ class CommerceService:
         order_id: str,
         transaction_id: str,
         signature: str | None,
+        client_ip: str = "",
     ) -> dict:
         if not transaction_id.strip():
             raise ValidationException("支付流水号不能为空")
@@ -55,9 +56,11 @@ class CommerceService:
             expected = self.payment_signature(order.id, transaction_id)
             if not signature or not hmac.compare_digest(signature, expected):
                 raise ValidationException("支付回调签名无效")
-        elif signature is not None:
+        elif not self._is_loopback(client_ip):
+            # 非本机（如公网 staging/demo）的 sandbox 也必须校验签名，
+            # 否则任何人可无证发放付费权益。本机联调仍允许无签名确认。
             expected = self.payment_signature(order.id, transaction_id)
-            if not hmac.compare_digest(signature, expected):
+            if not signature or not hmac.compare_digest(signature, expected):
                 raise ValidationException("支付回调签名无效")
 
         granted = self.repo.mark_order_paid(order, transaction_id.strip())
@@ -96,6 +99,16 @@ class CommerceService:
         self.repo.add_payment_event("stripe", event_type, event_id, order.id, event)
         result["granted"] = granted
         return result
+
+    @staticmethod
+    def _is_loopback(ip: str) -> bool:
+        if not ip:
+            return False
+        return (
+            ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost")
+            or ip.startswith("127.")
+            or ip.startswith("0:0:0:0:0:0:0:1")
+        )
 
     @staticmethod
     def payment_signature(order_id: str, transaction_id: str) -> str:
@@ -229,9 +242,9 @@ class CommerceService:
         if not key:
             raise ValidationException("请先填写访问密钥再探测模型")
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with model_async_client(safe_base_url, timeout=20) as client:
                 response = await client.get(
-                    f"{safe_base_url}/models",
+                    "/models",
                     headers={"Authorization": f"Bearer {key}"},
                     follow_redirects=False,
                 )
@@ -319,9 +332,12 @@ class CommerceService:
             raise ValidationException("请选择 AI 工具后再启动")
         resolved_base_url = validate_model_base_url(resolved_base_url)
 
-        self.llm.set_model(resolved_model, resolved_base_url)
-        self.llm.set_api_key(resolved_key)
-        connection = await self.llm.test_connection()
+        # 传参校验连接，绝不改写注入的 LLM 实例（避免多用户串号 / 并发竞态）
+        connection = await self.llm.test_connection(
+            model=resolved_model,
+            base_url=resolved_base_url,
+            api_key=resolved_key,
+        )
         if not connection.get("ok"):
             reason = str(connection.get("error") or "请确认工具和访问密钥").strip()
             raise ValidationException(f"连接 AI 工具失败：{reason}")

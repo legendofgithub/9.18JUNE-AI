@@ -145,8 +145,6 @@ def main() -> None:
         if args.dry_run:
             print("Dry run only; no rows were changed.")
             return
-        if not candidates:
-            return
 
         backup = create_backup()
         print(f"Backup created: {backup}")

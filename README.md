@@ -2,92 +2,113 @@
 
 June AI 帮助不学技术的用户，用自然语言指挥 AI 做出一个可试用、可售卖、可交付的最小商业 MVP。产品不教编程语言、实现框架或实现原理，只围绕「变现目标」推进：谁付费、卖什么结果、怎么做出第一版、怎么收款、怎么获客、怎么完成第一次交付。
 
-用户购买的是一次性解锁超级个体训练师人格的权限。启动后连接自己的 AI 工具，系统会自动装载训练官 skill、初始化节点清单、交互对话、追问链和商业 MVP 推进报告。
+用户购买的是一次性解锁超级个体训练师人格的权限（39 元）。启动后连接自己的 AI 工具（BYOK，AI 使用费用由用户自己的账户承担），系统自动装载训练官 skill、初始化节点清单、主对话、无限追问链和商业 MVP 推进报告。
 
-## 商品
+> 当前定位：**本地可测试的商业化 MVP**。支付为沙箱模式（Stripe 代码已接入但未真实扣款），Docker 生产编排就绪但未实跑。不要把仓库当作生产可上线版本使用。
 
-| 商品 | 价格 | 权益 |
-| --- | ---: | --- |
-| 超级个体训练师解锁 | 39 元 | 一次性获得启动超级个体训练师人格的权限 |
+## 核心能力
 
-付费解锁后不再按路径数量扣减。10 个必修节点和对应交付物全部客观完成后流程自动归档；归档后只能查看内容和报告，不能重新启用、补课或继续提问。用户口头说“还没完成”不会改变客观完成状态。
-
-商品承诺的是确定性交付物，不承诺收入。交付物包括付费人群画布、可售卖结果、Vibe Coding 商业需求简报、产品形态、第一版 MVP、迭代记录、报价与收款说明、获客素材、首次销售与交付记录、变现复盘报告。
-
-课程内容仅账号内使用，不提供课程内容导出。该边界无法阻止截图或人工抄录。
-
-## 10 节训练路径
-
-1. 选择愿意付费的人群和痛点。
-2. 定义一个最小可售卖结果。
-3. 写出 Vibe Coding 商业需求简报。
-4. 选择最小产品形态：单页工具、表单服务、模板或流程产品。
-5. 用自然语言让 AI 生成第一版 MVP。
-6. 用 5 分钟迭代法改到可试用。
-7. 制作报价、收款方式和交付说明。
-8. 准备获客素材和首批 20 个潜在客户。
-9. 发起首次销售并完成一次最小交付。
-10. 复盘转化、交付和下一轮迭代。
-
-每个节点只要求商业交付物。用户只需要描述：我要给谁解决什么问题、点开后看到什么、下一步做什么、怎么收款。训练官会把问题转成可执行的 Vibe Coding 指令。
+- **完整商业闭环**：注册登录 → 购买支付 → 权益解锁 → 训练流程 → 完成归档 → 管理审计。未付费不能启动训练师；未登录只能看到营销页。
+- **10 节必修训练路径**：付费人群画布 → 可售卖结果 → 商业需求简报 → 产品形态 → 第一版 MVP → 5 分钟迭代 → 报价收款 → 获客素材 → 首次销售 → 变现复盘。节点按顺序客观完成，全部完成后路径归档锁定（口头说"没完成"不改变客观状态）。
+- **无限追问链**：任意节点可发起层级不限的追问（线程树自引用，逐层 +1）。上下文按距离分级压缩（12/6/4/2 条），总量超预算从头部截断，不丢弃祖先、不加次数上限。追问结论写入 `thread_states.summary`，可一键「采纳为交付物」回流当前节点。
+- **Harness 工作台**：服务端持久化的项目工作区，Agent 支持 OpenAI-compatible function calling（6 轮工具迭代、工具超时 10s、SSE 过程输出）。内置文件工具受路径沙箱约束，`write_file` 必须用户审批后原子替换，执行过程可 trace 回放，服务重启可恢复中断现场。
+- **BYOK 连接 AI 工具**：用户只看到「选择 AI 工具 + 访问密钥」，不暴露 Base URL 等技术细节。密钥加密存储、API 不回传明文；连接失败按 401/402/429/5xx 分类为用户可读文案。
+- **支付**：沙箱确认幂等；Stripe Checkout Session + 签名 webhook（HMAC + 时间窗校验）已接通并测试，只信任 `checkout.session.completed` 发放权益，回调写 `payment_events` 供对账。
+- **账号安全与管理后台**：按账号 + IP 登录限流与临时锁定、账号禁用全链路生效、`audit_logs` 审计；`#/admin` 提供指标卡、用户/订单/审计表、禁用与解锁操作。
+- **多用户隔离**：`model_services` / `model_entries` 复合主键按 owner 隔离，存量表自动重建迁移。
+- **Windows 桌面版**：PyInstaller 目录版打包，自动起本地服务并打开浏览器，数据落在 exe 旁 `data\` 目录。
+- **运维就绪**：`/metrics` 指标、JSONL 请求日志、SQLite 在线备份（保留策略 + 异地复制）、Prometheus/Alertmanager 编排、依赖安全扫描、一方埋点。
 
 ## 使用流程
 
-1. 在产品首页 `#/` 注册或登录。
-2. 在首页购买 39 元的超级个体训练师解锁。
-3. 进入模型服务页 `#/studio`。
-4. 点击“启动超级个体训练师人格”。首次启动需要选择 AI 工具并填写访问密钥；后续启动自动复用已保存密钥。
-5. 系统自动装载超级个体训练官 skill，并创建首个项目问卷。
-6. 通过主对话推进当前节点，用追问链弄清当前商业动作。
-7. 按顺序提交每个节点交付物。
-8. 全部完成后查看归档内容和商业 MVP 推进报告。
-
-AI 使用费用由用户自己的 AI 工具账户承担。
+1. 打开产品（开发模式 `http://localhost:5173`，或后端直托 `http://localhost:8000`，或双击桌面版 exe）。
+2. 注册/登录，在首页购买 39 元解锁（管理员账号直接解锁，不走支付）。
+3. 进入模型服务页 `#/studio`，点击「启动超级个体训练师人格」，首次需连接 AI 工具密钥。
+4. 主对话推进当前节点，追问链弄清商业动作，按顺序提交交付物。
+5. 全部完成后查看归档内容与商业 MVP 推进报告（归档后只读，不能补课或继续提问）。
 
 ## 本地启动
 
+**注意：用 `backend/.venv`，根目录 `.venv` 的系统 Python 已失效；`run.bat` 目前不可用。**
+
+方式一（最简单）：前端已有构建产物时，只启动后端即可获得完整产品：
+
 ```powershell
-# 后端
 cd backend
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-# 前端
-cd frontend
-npm run dev
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 打开 http://localhost:8000
 ```
 
-前端默认地址是 `http://localhost:5173`。Windows 用户也可以继续使用仓库根目录的 `setup.bat` 和 `run.bat`。
-
-当前支付仍为沙箱模式，仅适合本地联调；正式上线前需要接入可用商户资质和真实支付回调。
-
-## Windows EXE
-
-在仓库根目录执行：
+方式二（前后端分离开发，前端热更新）：
 
 ```powershell
-.\build-desktop.bat
+# 窗口 1
+cd backend && .venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 窗口 2
+cd frontend && npm run dev    # http://localhost:5173
 ```
 
-产物是目录版 Windows 应用：
+方式三（Windows 桌面版）：
 
-```text
-dist\JuneAI\JuneAI.exe
-dist\JuneAI-Windows-x64.zip
+```powershell
+.\build-desktop.bat    # 产物 dist\JuneAI\JuneAI.exe 与 dist\JuneAI-Windows-x64.zip
 ```
 
-不要只单独复制 `JuneAI.exe`；它需要同目录的运行时文件。对外分发使用 `dist\JuneAI-Windows-x64.zip`。双击后会自动启动本地服务并打开浏览器。
-
-桌面版数据默认保存在 `JuneAI.exe` 旁边的 `data\` 目录，包括 SQLite 数据库、日志和 Harness 工作区。若该目录不可写，会回退到 `%LOCALAPPDATA%\JuneAI`。首次注册的账号会自动成为本机管理员。可在 exe 旁放置 `.env` 覆盖模型、支付等配置；现有 `backend\.env`、`backend\june.db` 和 API Key 不会被打包进 exe。
+桌面版数据保存在 `JuneAI.exe` 旁的 `data\` 目录（不可写时回退 `%LOCALAPPDATA%\JuneAI`），首个注册账号自动成为本机管理员。不要单独复制 exe——它需要同目录运行时文件，分发用 `JuneAI-Windows-x64.zip`。
 
 ## 验证
 
 ```powershell
-# 后端
-cd backend
-..\.venv\Scripts\python.exe -m pytest tests -q
+# 后端（102 passed；test_desktop_runtime.py 因本机 FastAPI 版本漂移暂时无法收集，--ignore 绕过）
+cd backend && .venv\Scripts\python.exe -m pytest tests -q
 
-# 前端
+# 前端（8 unit tests + typecheck + build）
 cd frontend
-npm test -- --run
-npm run build
+npm run typecheck && npm test -- --run && npm run build
+
+# Playwright E2E（critical-path / harness-workspace 两个 spec，mock 网络）
+npm run test:e2e
 ```
+
+测试覆盖商品定价、支付幂等、未付费拒绝启动、完成锁定、权限隔离、追问链上下文与回流、BYOK 密钥不泄露、Stripe webhook 验签、登录限流、多用户隔离迁移等业务规则。
+
+## 技术栈与结构
+
+- **后端**：FastAPI + SQLite（SQLAlchemy），分层架构 routes / services / repositories / models。
+  - `app/services/`：`mvp_service.py`（路径与追问链）、`agent_service.py`（Agent 循环）、`commerce_service.py`、`payment_service.py`（Stripe）、`tool_registry.py`（沙箱工具）、`auth_service.py`（限流/锁定）
+  - `app/repositories/`：`commerce_repo.py`、`harness_repo.py`、`session_repo.py`（线程树祖先链）
+  - `app/models/database.py`：建表与存量迁移
+- **前端**：React 19 + TypeScript + Vite 6 + Zustand + Tailwind 4，hash 路由。
+  - `src/components/commerce/`：商业页面与工作台（`CoachChatPanel`、`FollowUpWindow`、`ProjectWorkspace`、`AdminView`）
+  - `src/stores/`：`useCommerceStore.ts`、`useHarnessStore.ts`
+- **桌面**：`desktop.py` + `JuneAI.spec` + `build-desktop.bat`
+- **部署**：`docker-compose.yml` + `docker-compose.production.yml`、`deploy/nginx/`、`deploy/monitoring/`
+- **运维脚本**：`backend/scripts/`（`backup.py`、`clean_test_data.py`、`security_scan.py`、`migrate_sqlite_to_postgres.py`）
+
+## 当前状态与已知限制
+
+| 项 | 状态 |
+| --- | --- |
+| 后端/前端测试 | 102 + 8 通过，Playwright 2 个 spec |
+| 支付 | 沙箱可用；Stripe 代码+验签测试完成，**未真实扣款**，生产模式 fail closed |
+| 部署 | 本机 Nginx + 自签 HTTPS 演练通过；Docker 生产编排就绪**未实跑**；无真实域名/证书 |
+| 监控/备份 | 代码与配置就绪，未接入真实告警接收方与异地存储 |
+| 上线待办 | 真实支付、密码找回、管理员 2FA、退款对账后台、依赖扫描跑通修复 |
+
+## 硬性边界（改动前必读）
+
+1. 用户侧主流程**不得**出现技术叙事（API、Base URL、框架、数据库等）；用户是零基础商业者。
+2. AI 响应的服务端 `<tracking>` 元数据不得暴露给前端/API 响应。
+3. 已完成（completed）路径的主对话、追问、节点修改、重新启用、补课全部拒绝。
+4. 付费内容只在服务端，不提供导出/批量复制接口；不夸大防截图能力。
+5. 不重新引入自动访客身份；不迁移/重写历史路径。
+6. 不承诺收入，只承诺确定性交付物。
+7. 真实密钥不入代码/日志/文档；破坏性数据库操作前先备份（`backend/backups/` 惯例）。
+8. 追问链不做次数/层级硬上限，靠逐层压缩 + 总量封顶控制体积；追问结论必须能采纳为交付物。
+
+## 深入文档
+
+- [`WORK_HANDOFF.md`](WORK_HANDOFF.md) —— 最新交接状态：已完成能力、验证结果、未完成项、关键文件索引
+- [`产品状态.md`](产品状态.md) —— 产品全景：演变链路、商业模式、API 清单、登录体系
+- [`docs/harness-api.md`](docs/harness-api.md) / [`docs/harness-data-model.md`](docs/harness-data-model.md) —— Harness 工作台接口与数据模型
+- [`deploy/README.md`](deploy/README.md) —— 部署说明（Nginx 演练、监控编排、备份）

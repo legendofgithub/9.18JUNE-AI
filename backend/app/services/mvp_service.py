@@ -72,6 +72,11 @@ class MvpService:
     TRACKING_START = "<tracking>"
     TRACKING_END = "</tracking>"
 
+    # 追问链上下文预算：层级无限，靠「逐层压缩 + 总量封顶」守住单次请求体积，
+    # 而不是靠限制追问次数或层级深度。
+    FOLLOW_UP_BUDGET = 6000
+    FOLLOW_UP_MAIN_BUDGET = 2000
+
     def __init__(self, repo: CommerceRepository, session_repo: SessionRepository, llm_service, thread_manager):
         self.repo = repo
         self.session_repo = session_repo
@@ -91,8 +96,9 @@ class MvpService:
         current = self._current_step(run)
         messages = self.session_repo.get_all_messages(run.id)
         threads = self.session_repo.list_thread_states(run.id)
+        # 追问可无限延伸，这里对单条追问链做取数上限，避免详情接口随追问次数无限膨胀
         thread_messages = {
-            state["threadId"]: self.session_repo.get_all_messages(run.id, state["threadId"])
+            state["threadId"]: self.session_repo.get_recent_messages(run.id, state["threadId"], limit=100)
             for state in threads
         }
         artifact_by_step = {artifact.step_id: artifact for artifact in run.artifacts}
@@ -270,6 +276,9 @@ class MvpService:
                 self.session_repo.add_message_once(
                     assistant_message_id, session_id, "assistant", visible_content.strip(), thread_id=body.thread_id
                 )
+                self.session_repo.update_thread_summary(
+                    body.thread_id, self._summarize_thread(session_id, body.thread_id)
+                )
             yield {
                 "done": True,
                 "thread_id": body.thread_id,
@@ -277,6 +286,36 @@ class MvpService:
                 "userMessageId": user_message_id,
                 "assistantMessageId": assistant_message_id,
             }
+
+    def adopt_follow_up(self, owner_id: str, run_id: str, thread_id: str, title: str | None = None) -> dict:
+        """把追问链的结论落到当前节点的交付物草稿，让无限追问能真正推进节点完成"""
+        run = self._get_owned_run(owner_id, run_id)
+        self._reject_completed(run)
+        messages = self.session_repo.get_recent_messages(run_id, thread_id, limit=200)
+        if not messages:
+            raise ValidationException("这条追问链还没有内容可以采纳")
+
+        current = self._current_step(run)
+        block = self._format_adopted_thread(thread_id, messages)
+        artifact_title = (title or "").strip() or f"追问结论 · {current.title}"
+
+        existing = next((artifact for artifact in run.artifacts if artifact.step_id == current.id), None)
+        base = (existing.content if existing else "").strip()
+        if base == STEP_TOOLS[current.step_key]["template"].strip():
+            base = ""
+        content = f"{base}\n\n---\n\n{block}".strip() if base else block
+
+        self.repo.upsert_artifact(current, artifact_title, content)
+        self.repo.add_event(run, current, "follow_up_adopted", artifact_title, {"threadId": thread_id})
+        self.repo.db.commit()
+        return self.get_run_detail(owner_id, run_id)
+
+    @staticmethod
+    def _format_adopted_thread(thread_id: str, messages: list[dict]) -> str:
+        lines = [f"【追问结论 · {thread_id}】"]
+        for message in messages:
+            lines.append(f"{'问' if message['role'] == 'user' else '答'}：{message['content'].strip()}")
+        return "\n".join(lines)[:6000]
 
     def build_report(self, owner_id: str, run_id: str) -> str:
         run = self._get_owned_run(owner_id, run_id)
@@ -314,6 +353,20 @@ class MvpService:
             lines.append("全部节点已完成，本路径已锁定。")
         else:
             lines.extend(f"- {step.step_order}. {step.title}：{step.required_artifact}" for step in remaining)
+
+        lines.extend(["", "## 追问探索记录", ""])
+        threads = sorted(
+            self.session_repo.list_thread_states(run.id),
+            key=lambda item: (item["level"], item["updatedAt"]),
+        )
+        if not threads:
+            lines.append("本次流程没有产生追问。")
+        for thread in threads:
+            source = (thread["source"]["selectedText"] or "主对话").strip()[:40] or "主对话"
+            lines.append(f"- L{thread['level']} 追问链 · 来源：{source}")
+            summary = (thread.get("summary") or "").strip()
+            if summary:
+                lines.extend(f"  {line}" for line in summary.splitlines())
         return "\n".join(lines)
 
     def ensure_run_available(self, owner_id: str, run_id: str) -> None:
@@ -418,8 +471,17 @@ class MvpService:
 
     def _build_follow_up_messages(self, run: MvpRunModel, body: FollowUpRequest) -> list[dict]:
         current = self._current_step(run)
-        thread_messages = self.session_repo.get_all_messages(run.id, body.thread_id)
-        main_messages = self.session_repo.get_all_messages(run.id, "main")[-8:]
+        chain = self.session_repo.get_thread_ancestry(body.thread_id)
+        depth = len(chain)
+        sections: list[str] = []
+        for index, thread in enumerate(chain):
+            blocks = self._ancestry_blocks(run.id, thread, depth - 1 - index)
+            if blocks:
+                sections.append(f"[L{thread.level} 追问链]\n{blocks}")
+        ancestry = "\n\n".join(sections)
+        if len(ancestry) > self.FOLLOW_UP_BUDGET:
+            ancestry = "…（更早的追问已压缩）\n" + ancestry[-self.FOLLOW_UP_BUDGET:]
+        main_messages = self.session_repo.get_recent_messages(run.id, "main", limit=8)
         return [
             {
                 "role": "system",
@@ -427,6 +489,7 @@ class MvpService:
                     "你是 Vibe Coding 变现训练官的追问助手。只解释当前商业动作、用户反馈、可用性、售价、获客和交付，"
                     "以及如何用自然语言向 AI 描述期望效果。遇到实现类问题，转成用户想看到什么、点什么、得到什么。"
                     "不做技术扫盲，不讲解实现原理，把泛聊拉回项目推进，不承诺收入，不改变客观完成状态。"
+                    "追问链上下文记录了从主对话派生出的追问层级，越靠后的层级越接近用户当前疑问，回答以前面的结论为基础，不要重复已讲过的内容。"
                 ),
             },
             {
@@ -434,15 +497,75 @@ class MvpService:
                 "content": (
                     f"项目：{run.title}\n当前节点：{current.title}\n节点目标：{current.objective}\n"
                     f"选中文本：{body.source.selected_text or '无'}\n"
-                    f"主对话摘要：{self._clip_messages(main_messages)}\n"
-                    f"当前追问历史：{self._clip_messages(thread_messages)}\n追问：{body.query}"
+                    f"主对话最近进展：{self._clip_messages(main_messages, limit=self.FOLLOW_UP_MAIN_BUDGET)}\n\n"
+                    f"追问链上下文（由浅入深，最后一段是当前追问链）：\n{ancestry or '无'}\n\n"
+                    f"当前追问：{body.query}"
                 ),
             },
         ]
 
+    def _ancestry_blocks(self, session_id: str, thread, distance: int) -> str:
+        """
+        按「距当前层的距离」决定该层保留多少内容：近层全量、中层精简、远层只留结论。
+        distance=0 是当前追问链，1 是直接父链，2 及以上属于远层。
+        """
+        if distance <= 0:
+            max_messages, per_message = 12, 1200
+        elif distance == 1:
+            max_messages, per_message = 6, 600
+        elif distance == 2:
+            max_messages, per_message = 4, 400
+        else:
+            max_messages, per_message = 2, 300
+
+        state = self.session_repo.find_thread_state(thread.id)
+        if distance >= 2 and state is not None and state.summary.strip():
+            return f"历史结论：{state.summary.strip()[: per_message * 2]}"
+
+        messages = self.session_repo.get_recent_messages(session_id, thread.id, limit=max_messages)
+        if not messages:
+            return ""
+        body = "\n".join(f"{m['role']}: {m['content'][:per_message]}" for m in messages)
+        # 该层消息已超配额时，更早的部分以摘要形式兜底，保证追问链再长也不会整段失忆
+        if state is not None and state.summary.strip() and len(messages) >= max_messages:
+            body = f"本链更早的追问（已压缩）：{state.summary.strip()[:600]}\n{body}"
+        return body
+
     @staticmethod
-    def _clip_messages(messages: list[dict], limit: int = 4000) -> str:
-        return "\n".join(f"{m['role']}: {m['content'][:600]}" for m in messages[-8:])[:limit]
+    def _clip_messages(messages: list[dict], limit: int = 4000, per_message: int = 600) -> str:
+        """最近优先的预算裁剪：不再固定只留 8 条，保证最新一轮内容完整"""
+        picked: list[str] = []
+        used = 0
+        for message in reversed(messages):
+            text = message["content"]
+            if len(text) > per_message:
+                text = text[:per_message] + "…"
+            line = f"{message['role']}: {text}"
+            if used + len(line) > limit and picked:
+                break
+            picked.append(line)
+            used += len(line) + 1
+        if not picked and messages:
+            last = messages[-1]
+            picked.append(f"{last['role']}: {last['content'][:limit]}")
+        return "\n".join(reversed(picked))
+
+    def _summarize_thread(self, session_id: str, thread_id: str) -> str:
+        """
+        沉淀追问链摘要，供更深层追问与最终报告使用。
+        纯规则提取，不额外调用模型，避免追问本身烧掉用户额度。
+        """
+        messages = self.session_repo.get_recent_messages(session_id, thread_id, limit=40)
+        if not messages:
+            return ""
+        questions = [item["content"].strip() for item in messages if item["role"] == "user"]
+        answer = next((item["content"].strip() for item in reversed(messages) if item["role"] == "assistant"), "")
+        parts: list[str] = []
+        if questions:
+            parts.append("追问：" + "；".join(question[:80] for question in questions[-5:]))
+        if answer:
+            parts.append("结论：" + answer[:300])
+        return "\n".join(parts)[:800]
 
     def _safe_stream_end(self, buffer: str) -> int:
         for index, char in enumerate(buffer):

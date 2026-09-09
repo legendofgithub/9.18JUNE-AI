@@ -32,6 +32,12 @@ class ChatRequest(BaseModel):
     permission: Literal["read-only", "workspace-write", "full-access"] = "read-only"
 
 
+class AdoptFollowUpRequest(BaseModel):
+    """把一条追问链的结论采纳为当前节点的交付物草稿"""
+    thread_id: str = Field(min_length=1, max_length=100)
+    title: str | None = Field(default=None, max_length=200)
+
+
 def _owner(request: Request) -> str:
     owner_id = getattr(request.state, "owner_id", None)
     if not owner_id:
@@ -252,6 +258,14 @@ async def follow_up(run_id: str, body: FollowUpRequest, request: Request):
             yield {"event": "error", "data": json.dumps({"error": str(exc)})}
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/mvp-runs/{run_id}/follow-up/adopt")
+async def adopt_follow_up(run_id: str, body: AdoptFollowUpRequest, request: Request):
+    result = request.app.state.mvp_service.adopt_follow_up(
+        _owner(request), run_id, body.thread_id, body.title
+    )
+    return success(result, "追问结论已写入当前节点交付物")
 
 
 @router.get("/mvp-runs/{run_id}/report")

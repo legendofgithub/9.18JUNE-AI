@@ -259,5 +259,22 @@ if getattr(sys, "frozen", False):
     frontend_dist = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent)) / "frontend" / "dist"
 else:
     frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    app.frontend("/", directory=str(frontend_dist), fallback="index.html")
+if (frontend_dist / "index.html").exists():
+    # 注意：不要用 app.frontend()，该方法在当前 FastAPI 版本已不存在，会在生产/桌面模式下直接崩。
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
+
+    _frontend_root = frontend_dist.resolve()
+
+    @app.get("/", include_in_schema=False)
+    async def _frontend_index():
+        return FileResponse(_frontend_root / "index.html")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _frontend_spa(full_path: str):
+        """SPA fallback：命中真实文件就返回，否则回落到 index.html（前端用 hash 路由）"""
+        target = (frontend_dist / full_path).resolve()
+        if target.is_file() and str(target).startswith(str(_frontend_root)):
+            return FileResponse(target)
+        return FileResponse(_frontend_root / "index.html")

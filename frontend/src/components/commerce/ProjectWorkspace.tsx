@@ -32,6 +32,7 @@ import useHarnessStore from '../../stores/useHarnessStore';
 import type { HarnessPermission } from '../../types';
 import type { SiteLanguage } from './SiteHeader';
 import ModelServicesPanel from './ModelServicesPanel';
+import CoachChatPanel from './CoachChatPanel';
 
 type TemperatureLevel = 'low' | 'medium' | 'high';
 type RightTab = 'guide' | 'context' | 'files' | 'docs' | 'trace';
@@ -158,6 +159,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
   const [leftWidth, setLeftWidth] = useState(300);
   const [rightWidth, setRightWidth] = useState(390);
   const [rightTab, setRightTab] = useState<RightTab>('guide');
+  const [mainTab, setMainTab] = useState<'coach' | 'agent'>('coach');
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -364,6 +366,17 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
         </aside>
 
         <section className="dsh-main project-chat-main">
+          <div className="workspace-main-tabs">
+            <button className={mainTab === 'coach' ? 'is-active' : ''} onClick={() => setMainTab('coach')}>
+              <MessageSquare size={14} /> {language === 'zh' ? '跟练对话' : 'Coaching'}
+            </button>
+            <button className={mainTab === 'agent' ? 'is-active' : ''} onClick={() => setMainTab('agent')}>
+              <Activity size={14} /> {language === 'zh' ? 'Agent 工作台' : 'Agent'}
+            </button>
+          </div>
+          {mainTab === 'coach' ? (
+            <CoachChatPanel language={language} />
+          ) : (
           <div className="chat-panel">
             <header className="chat-panel-header">
               <div className="chat-panel-titles">
@@ -450,6 +463,7 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
               </div>
             </footer>
           </div>
+          )}
         </section>
 
         {rightOpen && <div className="resizer right" onMouseDown={startDrag('right')} />}

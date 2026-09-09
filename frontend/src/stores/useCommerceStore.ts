@@ -170,6 +170,7 @@ interface CommerceStore {
     selectedText: string;
     query: string;
   }) => Promise<void>;
+  adoptFollowUp: (threadId: string, title?: string) => Promise<void>;
   clearError: () => void;
   loadAdminData: () => Promise<void>;
   setAdminUserDisabled: (userId: string, disabled: boolean, reason: string) => Promise<boolean>;
@@ -631,6 +632,23 @@ export const useCommerceStore = create<CommerceStore>((set, get) => ({
       set({ followUpMessages: threads, error: error?.message || '追问失败' });
     } finally {
       set({ followUpStreaming: null });
+    }
+  },
+
+  adoptFollowUp: async (threadId, title) => {
+    const run = get().currentRun;
+    if (!run) return;
+    set({ isBusy: true, error: null });
+    try {
+      await request(`/mvp-runs/${run.id}/follow-up/adopt`, {
+        method: 'POST',
+        body: JSON.stringify({ thread_id: threadId, title: title || null }),
+      });
+      await get().selectRun(run.id);
+    } catch (error: any) {
+      set({ error: error?.message || '追问采纳失败' });
+    } finally {
+      set({ isBusy: false });
     }
   },
 

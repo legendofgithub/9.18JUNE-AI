@@ -164,7 +164,44 @@ class SessionRepository:
             for m in msgs
         ]
 
+    def get_recent_messages(self, session_id: str, thread_id: Optional[str] = None, limit: int = 50) -> list[dict]:
+        """取最近 limit 条消息（仍按时间正序返回），用于长追问链的膨胀保护"""
+        query = self.db.query(MessageModel).filter(MessageModel.session_id == session_id)
+        if thread_id:
+            query = query.filter(MessageModel.thread_id == thread_id)
+        msgs = query.order_by(desc(MessageModel.timestamp), desc(MessageModel.id)).limit(limit).all()
+        return [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "timestamp": int(m.timestamp * 1000),
+                "threadId": m.thread_id,
+            }
+            for m in reversed(msgs)
+        ]
+
     # ---- 追问线程操作 ----
+
+    def get_thread_ancestry(self, thread_id: str, max_depth: int = 64) -> list[ThreadModel]:
+        """
+        沿 parent_thread_id 上溯，返回「最远祖先 → 当前线程」的链路（含自身）。
+
+        parent 指向 main 时入库值为 session_id，在 threads 表中查不到，链路自然终止。
+        max_depth 与 seen 集合用于防御脏数据造成的自引用死循环。
+        """
+        chain: list[ThreadModel] = []
+        seen: set[str] = set()
+        cursor = thread_id
+        while cursor and cursor not in seen and len(chain) < max_depth:
+            seen.add(cursor)
+            thread = self.find_thread(cursor)
+            if thread is None:
+                break
+            chain.append(thread)
+            cursor = thread.parent_thread_id or ""
+        chain.reverse()
+        return chain
 
     def upsert_thread(self, session_id: str, thread_id: str, parent_thread_id: str, level: int) -> ThreadModel:
         """创建或刷新追问树节点"""

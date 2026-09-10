@@ -23,6 +23,8 @@ class RuntimeMetrics:
             "june_agent_tool_failures_total": 0,
             "june_agent_approvals_total": 0,
             "june_agent_cancellations_total": 0,
+            "june_follow_up_total": 0,
+            "june_follow_up_depth_total": 0,
         }
         self._lock = threading.Lock()
 
@@ -58,6 +60,10 @@ class RuntimeMetrics:
             f"june_agent_approvals_total {snapshot['june_agent_approvals_total']}",
             "# TYPE june_agent_cancellations_total counter",
             f"june_agent_cancellations_total {snapshot['june_agent_cancellations_total']}",
+            "# TYPE june_follow_up_total counter",
+            f"june_follow_up_total {snapshot['june_follow_up_total']}",
+            "# TYPE june_follow_up_depth_total counter",
+            f"june_follow_up_depth_total {snapshot['june_follow_up_depth_total']}",
         ]
         return "\n".join(lines) + "\n"
 

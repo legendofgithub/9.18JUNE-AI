@@ -471,11 +471,15 @@ class MvpService:
 
     def _build_follow_up_messages(self, run: MvpRunModel, body: FollowUpRequest) -> list[dict]:
         current = self._current_step(run)
-        chain = self.session_repo.get_thread_ancestry(body.thread_id)
+        # 批量预载线程节点 / 状态 / 消息，避免深链逐层查询（N+1）；语义与逐层查询完全一致
+        thread_map = self.session_repo.load_session_threads(run.id)
+        chain = self.session_repo.walk_ancestry(body.thread_id, thread_map)
         depth = len(chain)
+        state_map = self.session_repo.load_thread_states(run.id)
+        messages_map = self.session_repo.load_recent_messages_bulk(run.id, [thread.id for thread in chain], limit=12)
         sections: list[str] = []
         for index, thread in enumerate(chain):
-            blocks = self._ancestry_blocks(run.id, thread, depth - 1 - index)
+            blocks = self._ancestry_blocks(run.id, thread, depth - 1 - index, state_map, messages_map)
             if blocks:
                 sections.append(f"[L{thread.level} 追问链]\n{blocks}")
         ancestry = "\n\n".join(sections)
@@ -504,10 +508,18 @@ class MvpService:
             },
         ]
 
-    def _ancestry_blocks(self, session_id: str, thread, distance: int) -> str:
+    def _ancestry_blocks(
+        self,
+        session_id: str,
+        thread,
+        distance: int,
+        state_map: dict | None = None,
+        messages_map: dict | None = None,
+    ) -> str:
         """
         按「距当前层的距离」决定该层保留多少内容：近层全量、中层精简、远层只留结论。
         distance=0 是当前追问链，1 是直接父链，2 及以上属于远层。
+        传入 state_map / messages_map 时使用批量预载数据，否则回退逐条查询。
         """
         if distance <= 0:
             max_messages, per_message = 12, 1200
@@ -518,11 +530,17 @@ class MvpService:
         else:
             max_messages, per_message = 2, 300
 
-        state = self.session_repo.find_thread_state(thread.id)
+        if state_map is not None:
+            state = state_map.get(thread.id)
+        else:
+            state = self.session_repo.find_thread_state(thread.id)
         if distance >= 2 and state is not None and state.summary.strip():
             return f"历史结论：{state.summary.strip()[: per_message * 2]}"
 
-        messages = self.session_repo.get_recent_messages(session_id, thread.id, limit=max_messages)
+        if messages_map is not None:
+            messages = (messages_map.get(thread.id) or [])[-max_messages:]
+        else:
+            messages = self.session_repo.get_recent_messages(session_id, thread.id, limit=max_messages)
         if not messages:
             return ""
         body = "\n".join(f"{m['role']}: {m['content'][:per_message]}" for m in messages)

@@ -52,7 +52,7 @@ cd backend && .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --
 ## 追问链实现方式（改动前必读）
 
 - 线程是 `parent_thread_id` 自引用的树，`main` 派生的第一层是 L2，逐层 +1，深度不限。
-- 上下文组装：沿 `SessionRepository.get_thread_ancestry` 上溯，distance 0/1/2/更远分别保留 12/6/4/2 条、每条 1200/600/400/300 字符；远层优先用 `summary`；总量超 `FOLLOW_UP_BUDGET` 时从头部截断。
+- 上下文组装：`_build_follow_up_messages` 批量预载线程节点/状态/消息后由 `SessionRepository.walk_ancestry` 内存回溯（与 `get_thread_ancestry` 语义一致，消除逐层查询的 N+1）；distance 0/1/2/更远分别保留 12/6/4/2 条、每条 1200/600/400/300 字符；远层优先用 `summary`；总量超 `FOLLOW_UP_BUDGET` 时从头部截断。
 - 膨胀保护：`get_recent_messages` 取代无上限的 `get_all_messages`，详情接口每条链最多返回 100 条。
 - 追问前端入口在 `CoachChatPanel`（中栏「跟练对话」tab）+ `FollowUpWindow`（可堆叠悬浮窗），Agent 工作台是并列 tab，不要再把追问塞回 Harness 流程。
 

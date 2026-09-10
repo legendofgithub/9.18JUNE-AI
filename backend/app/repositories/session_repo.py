@@ -203,6 +203,62 @@ class SessionRepository:
         chain.reverse()
         return chain
 
+    def load_session_threads(self, session_id: str) -> dict[str, ThreadModel]:
+        """一次性载入该会话的全部追问线程节点（id -> row），供追问链批量组装上下文"""
+        rows = self.db.query(ThreadModel).filter(ThreadModel.session_id == session_id).all()
+        return {row.id: row for row in rows}
+
+    def load_thread_states(self, session_id: str) -> dict[str, ThreadStateModel]:
+        """一次性载入该会话的线程状态（thread_id -> row）"""
+        rows = self.db.query(ThreadStateModel).filter(ThreadStateModel.session_id == session_id).all()
+        return {row.id: row for row in rows}
+
+    def load_recent_messages_bulk(self, session_id: str, thread_ids: list[str], limit: int = 12) -> dict[str, list[dict]]:
+        """批量取每个线程最近 limit 条消息（时间正序），等价于对每条链单独调 get_recent_messages"""
+        if not thread_ids:
+            return {}
+        rows = (
+            self.db.query(MessageModel)
+            .filter(MessageModel.session_id == session_id, MessageModel.thread_id.in_(thread_ids))
+            .order_by(MessageModel.timestamp.desc(), MessageModel.id.desc())
+            .all()
+        )
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            bucket = grouped.setdefault(row.thread_id, [])
+            if len(bucket) < limit:
+                bucket.append(
+                    {
+                        "id": row.id,
+                        "role": row.role,
+                        "content": row.content,
+                        "timestamp": int(row.timestamp * 1000),
+                        "threadId": row.thread_id,
+                    }
+                )
+        for bucket in grouped.values():
+            bucket.reverse()
+        return grouped
+
+    def walk_ancestry(
+        self, thread_id: str, thread_map: dict[str, ThreadModel], max_depth: int = 64
+    ) -> list[ThreadModel]:
+        """与 get_thread_ancestry 语义一致：优先查预载 map，链上缺失的 id 才回退逐层查询"""
+        chain: list[ThreadModel] = []
+        seen: set[str] = set()
+        cursor = thread_id
+        while cursor and cursor not in seen and len(chain) < max_depth:
+            seen.add(cursor)
+            thread = thread_map.get(cursor)
+            if thread is None:
+                thread = self.find_thread(cursor)
+            if thread is None:
+                break
+            chain.append(thread)
+            cursor = thread.parent_thread_id or ""
+        chain.reverse()
+        return chain
+
     def upsert_thread(self, session_id: str, thread_id: str, parent_thread_id: str, level: int) -> ThreadModel:
         """创建或刷新追问树节点"""
         self._ensure_session_row(session_id)

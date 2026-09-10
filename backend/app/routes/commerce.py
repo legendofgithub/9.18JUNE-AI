@@ -244,6 +244,8 @@ async def chat(run_id: str, body: ChatRequest, request: Request):
 async def follow_up(run_id: str, body: FollowUpRequest, request: Request):
     owner_id = _owner(request)
     request.app.state.mvp_service.ensure_run_available(owner_id, run_id)
+    request.app.state.runtime_metrics.inc("june_follow_up_total")
+    request.app.state.runtime_metrics.inc("june_follow_up_depth_total", max(0, int(body.level or 0)))
 
     async def event_generator():
         try:

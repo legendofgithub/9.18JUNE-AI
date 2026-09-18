@@ -222,7 +222,6 @@ async def health():
         "status": "healthy" if db_status == "connected" else "degraded",
         "db": db_status,
         "active_threads": thread_manager.active_count(),
-        "db": db_status,
     }
 
 

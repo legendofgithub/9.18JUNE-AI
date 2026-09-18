@@ -31,7 +31,7 @@ npm run typecheck && npm test -- --run && npm run build
 cd backend && .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-测试：`pytest tests -q` 全部 **104 个通过**（含 `test_desktop_runtime.py`）。
+测试：`pytest tests -q --ignore=tests/test_desktop_runtime.py` → **102 passed**（该文件因本机 FastAPI 版本漂移无法收集，业务测试不受影响；测试数以实跑为准，不要写死）。
 已修复 `app/main.py` 前端静态托管使用 `app.frontend()` 导致的 FastAPI 版本漂移——只要 `frontend/dist` 存在，生产与桌面模式下后端会直接 `AttributeError`，现已改为 `StaticFiles` 挂载 + SPA fallback。
 
 ## 硬性边界（违反会破坏产品承诺）

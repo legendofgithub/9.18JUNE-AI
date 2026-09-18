@@ -12,8 +12,8 @@ import type {
   HarnessProject,
 } from '../types';
 import { API_BASE } from '../config';
+import { authHeaders, request, streamEvents } from '../services/apiClient';
 
-const USER_TOKEN_KEY = 'june_user_token';
 const LOCAL_WORKSPACE_PREFIX = 'june_project_workspace_';
 const MIGRATED_SUFFIX = '_migrated';
 const TEXT_EXTENSIONS = new Set([
@@ -21,74 +21,6 @@ const TEXT_EXTENSIONS = new Set([
   'py', 'js', 'ts', 'tsx', 'jsx', 'css', 'html', 'xml', 'svg',
   'log', 'ini', 'toml', 'sql', 'sh', 'ps1',
 ]);
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem(USER_TOKEN_KEY);
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...authHeaders(), ...(options.headers || {}) },
-  });
-  let payload: any = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-  if (!response.ok || payload?.code !== 200) {
-    throw new Error(payload?.message || `请求失败：HTTP ${response.status}`);
-  }
-  return payload.data as T;
-}
-
-async function streamHarness(path: string, body: unknown, onEvent: (event: any) => void): Promise<void> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    let payload: any = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    throw new Error(payload?.message || `请求失败：HTTP ${response.status}`);
-  }
-  if (!response.body) throw new Error('后端没有返回执行流');
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let eventName = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.startsWith('event:')) {
-        eventName = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        const raw = line.slice(5).trim();
-        if (!raw || raw === ': heartbeat') continue;
-        try {
-          const payload = JSON.parse(raw);
-          onEvent({ ...payload, type: payload.type || eventName });
-        } catch {
-          // Ignore heartbeat comments and malformed partial frames.
-        }
-      }
-    }
-  }
-}
 
 function localMessage(role: HarnessMessage['role'], content: string): HarnessMessage {
   return {
@@ -561,7 +493,7 @@ export const useHarnessStore = create<HarnessStore>((set, get) => ({
   runStream: async (path: string, body: unknown) => {
     set({ isRunning: true, error: null });
     try {
-      await streamHarness(path, body, event => {
+      await streamEvents(path, body, event => {
         if (event.type === 'context') {
           set({ context: event.context });
         } else if (event.type === 'message.delta') {

@@ -18,36 +18,9 @@ import type {
 } from '../types';
 import { API_BASE } from '../config';
 import { trackEvent } from '../services/analyticsService';
+import { authHeaders, request, streamRequest, USER_TOKEN_KEY } from '../services/apiClient';
 
-const USER_TOKEN_KEY = 'june_user_token';
 let bootstrapPromise: Promise<void> | null = null;
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem(USER_TOKEN_KEY);
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...authHeaders(),
-      ...(options.headers || {}),
-    },
-  });
-  let payload: any = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-  if (!response.ok || payload?.code !== 200) {
-    throw new Error(payload?.message || `请求失败：HTTP ${response.status}`);
-  }
-  return payload.data as T;
-}
 
 function localMessage(role: 'user' | 'assistant', content: string, threadId = 'main'): Message {
   return {
@@ -57,59 +30,6 @@ function localMessage(role: 'user' | 'assistant', content: string, threadId = 'm
     timestamp: Date.now(),
     threadId,
   };
-}
-
-async function streamRequest(url: string, body: any, onDelta: (delta: string) => void): Promise<any> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    let payload: any = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
-    }
-    throw new Error(payload?.message || `请求失败：HTTP ${response.status}`);
-  }
-  if (!response.body) throw new Error('后端没有返回流式内容');
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let donePayload: any = null;
-  let currentEvent = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (line.startsWith('event:')) {
-        currentEvent = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        const raw = line.slice(5).trim();
-        if (!raw || raw === ': heartbeat') continue;
-        try {
-          const payload = JSON.parse(raw);
-          if (currentEvent === 'error' || payload.error) {
-            throw new Error(payload.error || 'AI 请求失败');
-          }
-          if (payload.delta) onDelta(payload.delta);
-          if (currentEvent === 'done' || payload.done) donePayload = payload;
-        } catch (error) {
-          if (error instanceof Error && error.message !== 'Unexpected end of JSON input') {
-            if (!(error as any).jsonParseOnly) throw error;
-          }
-        }
-      }
-    }
-  }
-  return donePayload;
 }
 
 interface CommerceStore {

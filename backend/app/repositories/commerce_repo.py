@@ -468,6 +468,47 @@ class CommerceRepository:
             .first()
         )
 
+    def promote_to_admin(self, user: UserModel) -> UserModel:
+        """桌面版首个注册用户提权为本机管理员"""
+        user.is_admin = True
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def new_model_service(self, service_id: str, owner_id: str) -> ModelServiceModel:
+        return ModelServiceModel(id=service_id, owner_id=owner_id)
+
+    def seed_model_services(self, owner_id: str, items: list[dict]) -> None:
+        """写入默认模型服务种子数据（调用方需先确认该 owner 尚无服务）"""
+        for item in items:
+            service = ModelServiceModel(
+                id=item["id"],
+                owner_id=owner_id,
+                display_name=item["display_name"],
+                vendor=item["vendor"],
+                base_url=item["base_url"],
+                protocol=item["protocol"],
+            )
+            for model in item["models"]:
+                service.models.append(ModelEntryModel(**model))
+            self.db.add(service)
+        self.db.commit()
+
+    def replace_model_service_entries(self, service: ModelServiceModel, entries: list[dict]) -> ModelServiceModel:
+        """整体替换模型清单并落库：flush 保证旧条目先删，commit 后回读供乐观锁比对 version"""
+        service.models.clear()
+        self.db.flush()
+        for item in entries:
+            service.models.append(ModelEntryModel(**item))
+        self.db.add(service)
+        self.db.commit()
+        self.db.refresh(service)
+        return service
+
+    def delete_model_service(self, service: ModelServiceModel) -> None:
+        self.db.delete(service)
+        self.db.commit()
+
     def create_run(self, owner_id: str, skill: InstalledSkillModel, title: str, vertical: str) -> MvpRunModel:
         run = MvpRunModel(
             owner_id=owner_id,

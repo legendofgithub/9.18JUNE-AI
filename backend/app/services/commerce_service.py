@@ -9,7 +9,7 @@ from ..core.exceptions import ValidationException
 from ..core.security import decrypt_api_key, encrypt_api_key
 from ..core.url_security import model_async_client, validate_model_base_url
 from ..models.database import EntitlementModel, InstalledSkillModel, MvpRunModel, OrderModel, ProductModel
-from ..models.database import ModelEntryModel, ModelServiceModel
+from ..models.database import ModelServiceModel
 from ..repositories.commerce_repo import CommerceRepository
 from .payment_service import PaymentService
 
@@ -174,19 +174,7 @@ class CommerceService:
     def _seed_model_services(self, owner_id: str) -> None:
         if self.repo.list_model_services(owner_id):
             return
-        for item in self.DEFAULT_MODEL_SERVICES:
-            service = ModelServiceModel(
-                id=item["id"],
-                owner_id=owner_id,
-                display_name=item["display_name"],
-                vendor=item["vendor"],
-                base_url=item["base_url"],
-                protocol=item["protocol"],
-            )
-            for model in item["models"]:
-                service.models.append(ModelEntryModel(**model))
-            self.repo.db.add(service)
-        self.repo.db.commit()
+        self.repo.seed_model_services(owner_id, self.DEFAULT_MODEL_SERVICES)
 
     def list_model_services(self, owner_id: str) -> list[dict]:
         self._seed_model_services(owner_id)
@@ -199,7 +187,7 @@ class CommerceService:
         existing = self.repo.find_model_service_by_route(owner_id, route_id)
         if service_id is None and existing is not None:
             raise ValidationException("服务路由 ID 已存在，请更换后重试")
-        service = existing if service_id else ModelServiceModel(id=route_id, owner_id=owner_id)
+        service = existing if service_id else self.repo.new_model_service(route_id, owner_id)
         if service_id:
             service = self.repo.get_model_service(owner_id, service_id)
             if service.id != route_id and self.repo.find_model_service_by_route(owner_id, route_id):
@@ -215,25 +203,22 @@ class CommerceService:
             service.encrypted_api_key = encrypt_api_key(payload.api_key.strip())
             service.api_key_ready = True
         service.version = (service.version or 0) + 1
-        service.models.clear()
-        self.repo.db.flush()
-        for item in payload.models:
-            service.models.append(ModelEntryModel(
-                model_id=item.model_id,
-                display_name=item.display_name or item.model_id,
-                context_tokens=item.context_tokens,
-                max_output_tokens=item.max_output_tokens,
-                reasoning=item.reasoning,
-            ))
-        self.repo.db.add(service)
-        self.repo.db.commit()
-        self.repo.db.refresh(service)
+        entries = [
+            {
+                "model_id": item.model_id,
+                "display_name": item.display_name or item.model_id,
+                "context_tokens": item.context_tokens,
+                "max_output_tokens": item.max_output_tokens,
+                "reasoning": item.reasoning,
+            }
+            for item in payload.models
+        ]
+        service = self.repo.replace_model_service_entries(service, entries)
         return self._model_service_to_dict(service)
 
     def delete_model_service(self, owner_id: str, service_id: str) -> None:
         service = self.repo.get_model_service(owner_id, service_id)
-        self.repo.db.delete(service)
-        self.repo.db.commit()
+        self.repo.delete_model_service(service)
 
     async def discover_models(self, owner_id: str, service_id: str, base_url: str, api_key: str) -> list[dict]:
         service = self.repo.get_model_service(owner_id, service_id)

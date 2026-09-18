@@ -19,9 +19,7 @@ class AuthService:
         is_first_local_user = settings.is_desktop and not self.repo.list_users()
         user = self.repo.create_user(email, password, display_name)
         if is_first_local_user:
-            user.is_admin = True
-            self.repo.db.commit()
-            self.repo.db.refresh(user)
+            user = self.repo.promote_to_admin(user)
         return self._user_response(user)
 
     def login(self, account: str, password: str, ip: str = "", user_agent: str = "") -> dict:

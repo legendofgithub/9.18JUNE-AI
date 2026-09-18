@@ -1,125 +1,17 @@
-import base64
-import hashlib
-import hmac
-
 import httpx
 
-from ..core.config import settings
 from ..core.exceptions import ValidationException
 from ..core.security import decrypt_api_key, encrypt_api_key
 from ..core.url_security import model_async_client, validate_model_base_url
-from ..models.database import EntitlementModel, InstalledSkillModel, MvpRunModel, OrderModel, ProductModel
+from ..models.database import InstalledSkillModel, MvpRunModel
 from ..models.database import ModelServiceModel
 from ..repositories.commerce_repo import CommerceRepository
-from .payment_service import PaymentService
 
 
 class CommerceService:
-    def __init__(self, repo: CommerceRepository, llm_service, payment_service: PaymentService | None = None):
+    def __init__(self, repo: CommerceRepository, llm_service):
         self.repo = repo
         self.llm = llm_service
-        self.payment = payment_service or PaymentService()
-
-    def list_products(self) -> list[dict]:
-        return [self._product_to_dict(product) for product in self.repo.list_products()]
-
-    def list_orders(self, owner_id: str) -> list[dict]:
-        return [self._order_to_dict(order, order.product) for order in self.repo.list_orders(owner_id)]
-
-    async def create_order(self, owner_id: str, product_id: str) -> dict:
-        product = self.repo.get_product(product_id)
-        order = self.repo.create_order(owner_id, product, settings.JUNE_PAYMENT_PROVIDER)
-        user = self.repo.get_user_by_id(owner_id)
-        if user is not None and user.is_admin:
-            self.repo.mark_order_paid(order, f"ADMIN-{order.id}")
-        elif self.payment.enabled:
-            session = await self.payment.create_checkout(order, product)
-            order = self.repo.attach_payment_session(order, session["id"], session["url"])
-        return self._order_to_dict(order, product)
-
-    async def confirm_order(
-        self,
-        owner_id: str,
-        order_id: str,
-        transaction_id: str,
-        signature: str | None,
-        client_ip: str = "",
-    ) -> dict:
-        if not transaction_id.strip():
-            raise ValidationException("支付流水号不能为空")
-        order = self.repo.get_order(owner_id, order_id)
-
-        if settings.JUNE_PAYMENT_PROVIDER == "stripe":
-            raise ValidationException("真实支付订单由支付渠道回调自动确认")
-
-        if settings.is_production:
-            expected = self.payment_signature(order.id, transaction_id)
-            if not signature or not hmac.compare_digest(signature, expected):
-                raise ValidationException("支付回调签名无效")
-        elif not self._is_loopback(client_ip):
-            # 非本机（如公网 staging/demo）的 sandbox 也必须校验签名，
-            # 否则任何人可无证发放付费权益。本机联调仍允许无签名确认。
-            expected = self.payment_signature(order.id, transaction_id)
-            if not signature or not hmac.compare_digest(signature, expected):
-                raise ValidationException("支付回调签名无效")
-
-        granted = self.repo.mark_order_paid(order, transaction_id.strip())
-        if not granted:
-            raise ValidationException("订单无法确认，请检查支付状态和流水号")
-        return self._order_to_dict(order, order.product)
-
-    async def handle_stripe_webhook(self, payload: bytes, signature_header: str) -> dict:
-        event = self.payment.verify_webhook(payload, signature_header)
-        event_id = str(event.get("id", ""))
-        event_type = str(event.get("type", ""))
-        event_object = event.get("data", {}).get("object", {})
-        order_id = str(
-            event_object.get("client_reference_id")
-            or event_object.get("metadata", {}).get("order_id")
-            or ""
-        )
-        order = self.repo.get_order_unscoped(order_id)
-        if order is not None and order.provider_order_id and order.provider_order_id != str(event_object.get("id", "")):
-            order = None
-        transaction_id = str(event_object.get("payment_intent") or event_object.get("id") or "")
-
-        result = {
-            "received": True,
-            "type": event_type,
-            "orderId": order.id if order else "",
-        }
-        if event_type != "checkout.session.completed":
-            self.repo.add_payment_event("stripe", event_type, event_id, order.id if order else "", event)
-            return result
-        if order is None or order.status != "pending" or not transaction_id:
-            self.repo.add_payment_event("stripe", event_type, event_id, order_id, event)
-            return result
-
-        granted = self.repo.mark_order_paid(order, transaction_id)
-        self.repo.add_payment_event("stripe", event_type, event_id, order.id, event)
-        result["granted"] = granted
-        return result
-
-    @staticmethod
-    def _is_loopback(ip: str) -> bool:
-        if not ip:
-            return False
-        return (
-            ip in ("127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost")
-            or ip.startswith("127.")
-            or ip.startswith("0:0:0:0:0:0:0:1")
-        )
-
-    @staticmethod
-    def payment_signature(order_id: str, transaction_id: str) -> str:
-        secret = settings.JUNE_PAYMENT_CALLBACK_SECRET or "june-sandbox-callback-secret"
-        payload = f"{order_id}|{transaction_id}|paid"
-        digest = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
-        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-    def get_entitlement(self, owner_id: str) -> dict:
-        entitlement = self.repo.get_entitlement(owner_id)
-        return self._entitlement_to_dict(entitlement)
 
     def get_skill(self, owner_id: str) -> dict | None:
         skill = self.repo.find_installed_skill(owner_id)
@@ -285,7 +177,8 @@ class CommerceService:
         active_run = next((run for run in self.repo.list_runs(owner_id) if run.status == "active"), None)
         preferred_run = active_run or next(iter(self.repo.list_runs(owner_id)), None)
         return {
-            "paid": self.repo.has_paid_order(owner_id),
+            # 产品已转为免费：保留字段以兼容前端类型，恒为已解锁
+            "paid": True,
             "skillInstalled": skill is not None,
             "apiKeyReady": bool(skill and skill.api_key_ready and skill.encrypted_api_key),
             "modelName": skill.model_name if skill else "",
@@ -299,9 +192,6 @@ class CommerceService:
         base_url: str = "",
         api_key: str = "",
     ) -> dict:
-        if not self.repo.has_paid_order(owner_id):
-            raise ValidationException("请先完成购买，再启动超级个体训练师人格")
-
         existing_skill = self.repo.find_installed_skill(owner_id)
         resolved_model = model_name.strip() or (existing_skill.model_name if existing_skill else "glm-5.2")
         resolved_base_url = base_url.strip() or (existing_skill.base_url if existing_skill else "")
@@ -357,42 +247,6 @@ class CommerceService:
             raise ValidationException("请先连接 AI 工具并启动训练官")
         run = self.repo.create_run(owner_id, skill, title, vertical)
         return self._run_summary(run)
-
-    def _product_to_dict(self, product: ProductModel) -> dict:
-        return {
-            "id": product.id,
-            "name": product.name,
-            "description": product.description,
-            "priceCents": product.price_cents,
-            "priceYuan": product.price_cents / 100,
-            "pathCount": product.path_count,
-        }
-
-    def _order_to_dict(self, order: OrderModel, product: ProductModel) -> dict:
-        return {
-            "id": order.id,
-            "productId": order.product_id,
-            "productName": product.name,
-            "amountCents": order.amount_cents,
-            "pathCount": order.path_count,
-            "status": order.status,
-            "provider": order.provider,
-            "providerOrderId": order.provider_order_id,
-            "paymentUrl": order.payment_url,
-            "providerTransactionId": order.provider_transaction_id,
-            "createdAt": int(order.created_at * 1000),
-            "paidAt": int(order.paid_at * 1000) if order.paid_at else None,
-            "sandbox": settings.JUNE_PAYMENT_PROVIDER == "sandbox" and not settings.is_production,
-        }
-
-    @staticmethod
-    def _entitlement_to_dict(entitlement: EntitlementModel) -> dict:
-        return {
-            "totalPaths": entitlement.total_paths,
-            "usedPaths": entitlement.used_paths,
-            "availablePaths": entitlement.total_paths - entitlement.used_paths,
-            "installed": entitlement.installed,
-        }
 
     @staticmethod
     def _skill_to_dict(skill: InstalledSkillModel) -> dict:

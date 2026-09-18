@@ -38,12 +38,6 @@ async def list_users(request: Request, search: str = Query(default="", max_lengt
     return success(request.app.state.admin_service.list_users(search))
 
 
-@router.get("/orders")
-async def list_orders(request: Request, limit: int = Query(default=100, ge=1, le=500)):
-    _admin(request)
-    return success(request.app.state.admin_service.list_orders(limit))
-
-
 @router.patch("/users/{user_id}")
 async def patch_user(user_id: str, body: AdminUserPatchRequest, request: Request):
     actor = _admin(request)

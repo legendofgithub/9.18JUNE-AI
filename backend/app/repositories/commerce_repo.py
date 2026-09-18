@@ -11,32 +11,17 @@ from ..core.exceptions import JuneException, NotFoundException, ValidationExcept
 from ..models.database import (
     AnalyticsEventModel,
     AuditLogModel,
-    EntitlementModel,
     InstalledSkillModel,
     LoginThrottleModel,
     MvpRunModel,
     ModelEntryModel,
     ModelServiceModel,
-    OrderModel,
-    PaymentEventModel,
-    ProductModel,
     RunArtifactModel,
     RunEventModel,
     RunStepModel,
     SessionModel,
     UserModel,
 )
-
-
-PRODUCTS = [
-    {
-        "id": "super-solo-coach-unlock",
-        "name": "超级个体训练师解锁",
-        "description": "一次性解锁超级个体训练师人格，自动装载 skill 并进入 AI 跟踪交付流程。",
-        "price_cents": 3900,
-        "path_count": 1,
-    },
-]
 
 
 MVP_STEPS = [
@@ -85,31 +70,6 @@ def verify_password(password: str, password_hash: str, password_salt: str) -> bo
 class CommerceRepository:
     def __init__(self, db: Session):
         self.db = db
-
-    def seed_products(self) -> None:
-        active_ids = {item["id"] for item in PRODUCTS}
-        for item in PRODUCTS:
-            product = self.db.get(ProductModel, item["id"])
-            if product is None:
-                self.db.add(ProductModel(**item))
-            else:
-                product.name = item["name"]
-                product.description = item["description"]
-                product.price_cents = item["price_cents"]
-                product.path_count = item["path_count"]
-                product.is_active = True
-        for product in self.db.query(ProductModel).filter(ProductModel.id.notin_(active_ids)).all():
-            product.is_active = False
-        self.db.commit()
-
-    def list_products(self) -> list[ProductModel]:
-        return self.db.query(ProductModel).filter(ProductModel.is_active.is_(True)).order_by(ProductModel.created_at).all()
-
-    def get_product(self, product_id: str) -> ProductModel:
-        product = self.db.get(ProductModel, product_id)
-        if product is None or not product.is_active:
-            raise NotFoundException("商品不存在或已下架")
-        return product
 
     def create_user(
         self,
@@ -282,91 +242,6 @@ class CommerceRepository:
     def list_audit_logs(self, limit: int = 100) -> list[AuditLogModel]:
         return self.db.query(AuditLogModel).order_by(AuditLogModel.created_at.desc()).limit(limit).all()
 
-    def create_order(self, owner_id: str, product: ProductModel, provider: str) -> OrderModel:
-        order = OrderModel(
-            owner_id=owner_id,
-            product_id=product.id,
-            amount_cents=product.price_cents,
-            path_count=product.path_count,
-            provider=provider,
-            provider_order_id=f"june_{secrets.token_hex(12)}",
-        )
-        self.db.add(order)
-        self.db.commit()
-        self.db.refresh(order)
-        return order
-
-    def attach_payment_session(self, order: OrderModel, provider_order_id: str, payment_url: str) -> OrderModel:
-        order.provider_order_id = provider_order_id
-        order.payment_url = payment_url
-        self.db.commit()
-        self.db.refresh(order)
-        return order
-
-    def get_order_by_provider_id(self, provider_order_id: str) -> Optional[OrderModel]:
-        return (
-            self.db.query(OrderModel)
-            .filter(OrderModel.provider_order_id == provider_order_id)
-            .first()
-        )
-
-    def get_order_unscoped(self, order_id: str) -> Optional[OrderModel]:
-        return self.db.get(OrderModel, order_id)
-
-    def add_payment_event(
-        self,
-        provider: str,
-        event_type: str,
-        provider_event_id: str,
-        order_id: str,
-        payload: dict,
-    ) -> None:
-        self.db.add(PaymentEventModel(
-            provider=provider,
-            event_type=event_type,
-            provider_event_id=provider_event_id[:180],
-            order_id=order_id,
-            payload_json=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        ))
-        self.db.commit()
-
-    def get_order(self, owner_id: str, order_id: str) -> OrderModel:
-        order = self.db.get(OrderModel, order_id)
-        if order is None or order.owner_id != owner_id:
-            raise NotFoundException("订单不存在")
-        return order
-
-    def list_orders(self, owner_id: str) -> list[OrderModel]:
-        return (
-            self.db.query(OrderModel)
-            .filter(OrderModel.owner_id == owner_id)
-            .order_by(OrderModel.created_at.desc())
-            .all()
-        )
-
-    def list_all_orders(self, limit: int = 100) -> list[OrderModel]:
-        return self.db.query(OrderModel).order_by(OrderModel.created_at.desc()).limit(limit).all()
-
-    def has_paid_order(self, owner_id: str) -> bool:
-        return (
-            self.db.query(OrderModel.id)
-            .filter(OrderModel.owner_id == owner_id, OrderModel.status == "paid")
-            .first()
-            is not None
-        )
-
-    def mark_order_paid(self, order: OrderModel, transaction_id: str) -> bool:
-        if order.status == "paid":
-            return order.provider_transaction_id == transaction_id
-        if order.status != "pending":
-            return False
-        order.status = "paid"
-        order.provider_transaction_id = transaction_id
-        order.paid_at = time.time()
-        self._grant_paths(order.owner_id, order.path_count)
-        self.db.commit()
-        return True
-
     def add_analytics_event(
         self,
         event_name: str,
@@ -392,33 +267,12 @@ class CommerceRepository:
 
     def overview_stats(self) -> dict:
         """管理后台指标卡的全部聚合统计（只读，单次调用）"""
-        paid_rows = self.db.query(OrderModel.owner_id).filter(OrderModel.status == "paid").distinct().all()
-        revenue_rows = self.db.query(OrderModel.amount_cents).filter(OrderModel.status == "paid").all()
         return {
             "totalUsers": self.db.query(UserModel).count(),
-            "paidUsers": len(paid_rows),
             "disabledUsers": self.db.query(UserModel).filter(UserModel.is_disabled.is_(True)).count(),
             "activeRuns": self.db.query(MvpRunModel).filter(MvpRunModel.status == "active").count(),
-            "pendingOrders": self.db.query(OrderModel).filter(OrderModel.status == "pending").count(),
-            "revenueCents": sum(row[0] for row in revenue_rows),
             "analyticsEvents": self.db.query(AnalyticsEventModel).count(),
         }
-
-    def _grant_paths(self, owner_id: str, path_count: int) -> None:
-        entitlement = self.get_entitlement(owner_id, create=False)
-        if entitlement is None:
-            entitlement = EntitlementModel(owner_id=owner_id, total_paths=0, used_paths=0)
-            self.db.add(entitlement)
-        entitlement.total_paths += path_count
-
-    def get_entitlement(self, owner_id: str, create: bool = True) -> Optional[EntitlementModel]:
-        entitlement = self.db.get(EntitlementModel, owner_id)
-        if entitlement is None and create:
-            entitlement = EntitlementModel(owner_id=owner_id)
-            self.db.add(entitlement)
-            self.db.commit()
-            self.db.refresh(entitlement)
-        return entitlement
 
     def install_skill(
         self,
@@ -438,8 +292,6 @@ class CommerceRepository:
         skill.base_url = base_url
         skill.api_key_ready = api_key_ready
         skill.encrypted_api_key = encrypted_api_key
-        entitlement = self.get_entitlement(owner_id)
-        entitlement.installed = True
         self.db.commit()
         self.db.refresh(skill)
         return skill

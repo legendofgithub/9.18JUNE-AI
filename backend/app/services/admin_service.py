@@ -17,7 +17,6 @@ class AdminService:
         users = self.repo.list_users(search)
         result = []
         for user in users:
-            orders = self.repo.list_orders(user.id)
             result.append({
                 "id": user.id,
                 "email": user.email,
@@ -27,25 +26,8 @@ class AdminService:
                 "isDisabled": bool(user.is_disabled),
                 "disabledReason": user.disabled_reason,
                 "createdAt": int(user.created_at * 1000),
-                "orderCount": len(orders),
-                "paidCount": sum(1 for order in orders if order.status == "paid"),
             })
         return result
-
-    def list_orders(self, limit: int = 100) -> list[dict]:
-        orders = self.repo.list_all_orders(limit)
-        users = {user.id: user for user in self.repo.list_users()}
-        return [{
-            "id": order.id,
-            "ownerAccount": (users.get(order.owner_id).email if users.get(order.owner_id) else ""),
-            "productName": order.product.name if order.product else order.product_id,
-            "amountCents": order.amount_cents,
-            "status": order.status,
-            "provider": order.provider,
-            "providerOrderId": order.provider_order_id,
-            "createdAt": int(order.created_at * 1000),
-            "paidAt": int(order.paid_at * 1000) if order.paid_at else None,
-        } for order in orders]
 
     def set_user_disabled(self, actor_id: str, target_user_id: str, disabled: bool, reason: str, ip: str, user_agent: str) -> dict:
         actor = self.repo.get_user_by_id(actor_id)

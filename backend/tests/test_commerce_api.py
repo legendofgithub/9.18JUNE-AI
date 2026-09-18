@@ -62,7 +62,6 @@ def make_client(tmp_path):
     Base.metadata.create_all(engine)
     db = Session(engine)
     repo = CommerceRepository(db)
-    repo.seed_products()
     llm = FakeLLM()
 
     app = FastAPI()
@@ -103,44 +102,7 @@ def auth_headers(user):
     return {"Authorization": f"Bearer {user['token']}"}
 
 
-def buy_two_paths(client, user):
-    order = client.post("/api/orders", headers=auth_headers(user), json={
-        "product_id": "super-solo-coach-unlock",
-    })
-    assert order.status_code == 200
-    order_id = order.json()["data"]["id"]
-    confirmed = client.post(
-        f"/api/orders/{order_id}/confirm",
-        headers=auth_headers(user),
-        json={
-            "provider_transaction_id": "tx-001",
-            "signature": CommerceService.payment_signature(order_id, "tx-001"),
-        },
-    )
-    assert confirmed.status_code == 200
-    return order_id
-
-
-def test_products_are_public_and_priced(tmp_path):
-    client, db, engine, _ = make_client(tmp_path)
-    try:
-        anonymous = client.get("/api/products")
-        assert anonymous.status_code == 200
-
-        user = register_and_login(client)
-        response = client.get("/api/products", headers=auth_headers(user))
-        assert response.status_code == 200
-        products = response.json()["data"]
-        assert [(p["id"], p["priceYuan"]) for p in products] == [
-            ("super-solo-coach-unlock", 39),
-        ]
-        assert products[0]["name"] == "超级个体训练师解锁"
-    finally:
-        db.close()
-        engine.dispose()
-
-
-def test_admin_login_receives_paths_without_payment(tmp_path):
+def test_admin_login_and_free_coach_status(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
         client.app.state.auth_service.repo.seed_admin(
@@ -158,14 +120,6 @@ def test_admin_login_receives_paths_without_payment(tmp_path):
         assert admin["isAdmin"] is True
         assert admin["account"] == "tony"
 
-        order = client.post("/api/orders", headers=auth_headers(admin), json={
-            "product_id": "super-solo-coach-unlock",
-        })
-        assert order.status_code == 200
-        order_data = order.json()["data"]
-        assert order_data["status"] == "paid"
-        assert order_data["pathCount"] == 1
-
         status = client.get("/api/coach/status", headers=auth_headers(admin))
         assert status.json()["data"] == {
             "paid": True,
@@ -175,15 +129,9 @@ def test_admin_login_receives_paths_without_payment(tmp_path):
             "activeRunId": None,
         }
 
-        orders = client.get("/api/orders", headers=auth_headers(admin))
-        assert orders.status_code == 200
-        assert [item["status"] for item in orders.json()["data"]] == ["paid"]
-        assert orders.json()["data"][0]["pathCount"] == 1
-
         current_skill = client.get("/api/skills/current", headers=auth_headers(admin))
         assert current_skill.status_code == 200
         assert current_skill.json()["data"] is None
-
     finally:
         db.close()
         engine.dispose()
@@ -264,7 +212,7 @@ def test_cors_preflight_bypasses_user_token_auth(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
         response = client.options(
-            "/api/entitlements",
+            "/api/coach/status",
             headers={
                 "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "GET",
@@ -281,7 +229,7 @@ def test_cors_preflight_bypasses_user_token_auth(tmp_path):
         engine.dispose()
 
 
-def test_unpaid_user_cannot_install(tmp_path):
+def test_free_user_can_install_without_payment(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
         user = register_and_login(client)
@@ -290,8 +238,8 @@ def test_unpaid_user_cannot_install(tmp_path):
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "api_key": "sk-byok",
         })
-        assert response.status_code == 400
-        assert "请先完成购买" in response.json()["message"]
+        assert response.status_code == 200
+        assert response.json()["data"]["status"]["paid"] is True
     finally:
         db.close()
         engine.dispose()
@@ -301,7 +249,6 @@ def test_install_failure_returns_sanitized_reason(tmp_path):
     client, db, engine, llm = make_client(tmp_path)
     try:
         user = register_and_login(client, email="balance@example.com")
-        buy_two_paths(client, user)
         llm.connection_result = {
             "ok": False,
             "error": "AI 工具账户余额不足，请先充值后再连接。",
@@ -320,38 +267,10 @@ def test_install_failure_returns_sanitized_reason(tmp_path):
         engine.dispose()
 
 
-def test_payment_install_autorun_and_idempotency(tmp_path):
+def test_install_autorun_and_reuses_skill(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
         user = register_and_login(client)
-        order_id = buy_two_paths(client, user)
-
-        repeat = client.post(
-            f"/api/orders/{order_id}/confirm",
-            headers=auth_headers(user),
-            json={
-                "provider_transaction_id": "tx-001",
-                "signature": CommerceService.payment_signature(order_id, "tx-001"),
-            },
-        )
-        assert repeat.status_code == 200
-
-        wrong_repeat = client.post(
-            f"/api/orders/{order_id}/confirm",
-            headers=auth_headers(user),
-            json={
-                "provider_transaction_id": "tx-other",
-                "signature": CommerceService.payment_signature(order_id, "tx-other"),
-            },
-        )
-        assert wrong_repeat.status_code == 400
-
-        unsigned_repeat = client.post(
-            f"/api/orders/{order_id}/confirm",
-            headers=auth_headers(user),
-            json={"provider_transaction_id": "tx-001"},
-        )
-        assert unsigned_repeat.status_code == 400
 
         installed = client.post("/api/coach/start", headers=auth_headers(user), json={
             "model_name": "glm-5.2",
@@ -371,9 +290,6 @@ def test_payment_install_autorun_and_idempotency(tmp_path):
         assert restarted.status_code == 200
         assert restarted.json()["data"]["status"]["apiKeyReady"] is True
         assert restarted.json()["data"]["run"]["id"] == installed_data["run"]["id"]
-
-        entitlement = client.get("/api/entitlements", headers=auth_headers(user))
-        assert entitlement.json()["data"]["usedPaths"] == 0
 
         detail = client.get(
             f"/api/mvp-runs/{installed_data['run']['id']}",
@@ -398,12 +314,11 @@ def test_payment_install_autorun_and_idempotency(tmp_path):
         assert "5 个问题" in run["messages"][0]["content"]
         assert "怎么收款" in run["messages"][0]["content"]
 
-        products = client.get("/api/products").json()["data"]
         report = client.get(
             f"/api/mvp-runs/{run['id']}/report",
             headers=auth_headers(user),
         ).content.decode("utf-8")
-        visible_content = json.dumps(products, ensure_ascii=False) + json.dumps(run, ensure_ascii=False) + report
+        visible_content = json.dumps(run, ensure_ascii=False) + report
         for forbidden in ["API", "Base URL", "模型调用", "框架", "代码结构", "Prompt", "CORS"]:
             assert forbidden not in visible_content
     finally:
@@ -415,7 +330,6 @@ def test_completion_locks_first_path_and_second_path_remains_active(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
         user = register_and_login(client)
-        buy_two_paths(client, user)
         installed = client.post("/api/coach/start", headers=auth_headers(user), json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
@@ -495,7 +409,6 @@ def test_tracking_metadata_is_hidden_and_updates_project(tmp_path):
     client, db, engine, llm = make_client(tmp_path)
     try:
         user = register_and_login(client)
-        buy_two_paths(client, user)
         installed = client.post("/api/coach/start", headers=auth_headers(user), json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
@@ -526,7 +439,6 @@ def test_follow_up_hides_tracking_metadata(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
         user = register_and_login(client, "follower@example.com")
-        buy_two_paths(client, user)
         installed = client.post("/api/coach/start", headers=auth_headers(user), json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
@@ -564,7 +476,6 @@ def test_run_ownership_is_enforced(tmp_path):
     try:
         owner = register_and_login(client, "owner@example.com")
         intruder = register_and_login(client, "intruder@example.com")
-        buy_two_paths(client, owner)
         installed = client.post("/api/coach/start", headers=auth_headers(owner), json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",

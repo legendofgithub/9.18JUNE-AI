@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from ..core.exceptions import UnauthorizedException
-from ..core.security import verify_auth_token, get_client_ip
+from ..core.security import verify_auth_token
 from ..core.response import success
 from ..models.schemas import FollowUpRequest
 from ..models.commerce_schemas import (
@@ -15,8 +15,6 @@ from ..models.commerce_schemas import (
     ModelServiceDiscoverRequest,
     ModelServicePayload,
     MvpRunCreateRequest,
-    OrderConfirmRequest,
-    OrderCreateRequest,
     RunStepPatchRequest,
     SkillInstallRequest,
 )
@@ -41,13 +39,9 @@ class AdoptFollowUpRequest(BaseModel):
 def _owner(request: Request) -> str:
     owner_id = getattr(request.state, "owner_id", None)
     if not owner_id:
-        raise UnauthorizedException("请先登录后再操作付费课程")
+        raise UnauthorizedException("请先登录后再使用训练服务")
     request.app.state.auth_service.assert_user_active(owner_id)
     return owner_id
-
-
-def _client_ip(request: Request) -> str:
-    return get_client_ip(request)
 
 
 def _sanitize_properties(properties: dict) -> dict:
@@ -60,11 +54,6 @@ def _sanitize_properties(properties: dict) -> dict:
         elif isinstance(value, str):
             safe[key] = value[:200]
     return safe
-
-
-@router.get("/products")
-async def list_products(request: Request):
-    return success(request.app.state.commerce_service.list_products())
 
 
 @router.post("/analytics/events")
@@ -82,44 +71,6 @@ async def record_analytics_event(body: AnalyticsEventRequest, request: Request):
         _sanitize_properties(body.properties),
     )
     return success({"accepted": True}, "事件已记录")
-
-
-@router.post("/orders")
-async def create_order(body: OrderCreateRequest, request: Request):
-    result = await request.app.state.commerce_service.create_order(_owner(request), body.product_id)
-    return success(result, "订单已创建")
-
-
-@router.post("/payments/stripe/webhook")
-async def stripe_webhook(request: Request):
-    payload = await request.body()
-    result = await request.app.state.commerce_service.handle_stripe_webhook(
-        payload,
-        request.headers.get("stripe-signature", ""),
-    )
-    return success(result)
-
-
-@router.post("/orders/{order_id}/confirm")
-async def confirm_order(order_id: str, body: OrderConfirmRequest, request: Request):
-    result = await request.app.state.commerce_service.confirm_order(
-        _owner(request),
-        order_id,
-        body.provider_transaction_id,
-        body.signature,
-        _client_ip(request),
-    )
-    return success(result, "支付已确认")
-
-
-@router.get("/entitlements")
-async def get_entitlement(request: Request):
-    return success(request.app.state.commerce_service.get_entitlement(_owner(request)))
-
-
-@router.get("/orders")
-async def list_orders(request: Request):
-    return success(request.app.state.commerce_service.list_orders(_owner(request)))
 
 
 @router.get("/coach/status")

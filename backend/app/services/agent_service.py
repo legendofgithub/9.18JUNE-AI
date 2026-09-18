@@ -488,8 +488,7 @@ class AgentService:
         return run
 
     def _require_paid_model(self, owner_id: str, run_id: str):
-        if not self.commerce.has_paid_order(owner_id):
-            raise ValidationException("请先完成购买再使用 Harness 工作区")
+        # 产品已免费：只要求训练师已连接（保留方法名以减少改动面）
         skill = self.commerce.find_installed_skill(owner_id)
         if skill is None or not skill.api_key_ready:
             raise ValidationException("请先连接 AI 工具并启动训练师")

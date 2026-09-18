@@ -78,7 +78,6 @@ async def lifespan(app: FastAPI):
     commerce_repo = CommerceRepository(db_session)
     harness_repo = HarnessRepository(db_session)
     with request_db_scope(settings.connection_url):
-        commerce_repo.seed_products()
         if settings.JUNE_ADMIN_PASSWORD:
             commerce_repo.seed_admin(
                 settings.JUNE_ADMIN_IDENTITY,

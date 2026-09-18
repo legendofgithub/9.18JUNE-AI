@@ -62,7 +62,6 @@ def make_client(tmp_path):
     Base.metadata.create_all(engine)
     db = Session(engine)
     commerce = CommerceRepository(db)
-    commerce.seed_products()
     harness = HarnessRepository(db)
     llm = FakeToolLLM()
 
@@ -111,9 +110,7 @@ def auth_headers(user):
 
 
 def activate_paid_user(commerce, user):
-    product = commerce.get_product("super-solo-coach-unlock")
-    order = commerce.create_order(user["id"], product, "sandbox")
-    assert commerce.mark_order_paid(order, "tx-harness")
+    # 产品免费化后仅保留「安装技能」语义，helper 名保留以减少改动面
     commerce.install_skill(
         user["id"],
         "fake-model",
@@ -309,13 +306,14 @@ def test_context_compression_and_owner_isolation(tmp_path):
         engine.dispose()
 
 
-def test_unpaid_or_uninstalled_user_cannot_create_project(tmp_path):
+def test_free_user_can_create_project_after_install(tmp_path):
     client, db, engine, commerce, _, __, ___ = make_client(tmp_path)
     try:
-        user = register_and_login(client, "unpaid@example.com")
-        response = client.post("/api/harness/projects", headers=auth_headers(user), json={"title": "未付费"})
-        assert response.status_code == 400
-        assert response.json()["message"]
+        user = register_and_login(client, "free@example.com")
+        activate_paid_user(commerce, user)
+        create_active_run(commerce, user)
+        response = client.post("/api/harness/projects", headers=auth_headers(user), json={"title": "免费用户项目"})
+        assert response.status_code == 200
     finally:
         db.close()
         engine.dispose()

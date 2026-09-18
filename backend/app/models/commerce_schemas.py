@@ -12,15 +12,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class OrderCreateRequest(BaseModel):
-    product_id: str
-
-
-class OrderConfirmRequest(BaseModel):
-    provider_transaction_id: str
-    signature: str | None = None
-
-
 class AdminUserPatchRequest(BaseModel):
     disabled: bool
     reason: str = Field(default="", max_length=300)

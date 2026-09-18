@@ -190,6 +190,8 @@ test('Harness workspace streams tools, approvals, context, and trace', async ({ 
   await expect.poll(() => permissionPayload).toEqual({ permission: 'workspace-write' });
   await page.locator('.settings-popover .dsh-icon-button').first().click();
 
+  // 工作台默认落在「跟练对话」tab，Agent 流程需先切换
+  await page.getByRole('button', { name: /Agent 工作台/ }).click();
   await page.locator('.chat-composer .coach-textarea').fill('生成报价文档');
   await page.getByRole('button', { name: /发送/ }).click();
   await expect(page.getByText('等待审批')).toBeVisible();

@@ -23,6 +23,17 @@
 3. **深链验证工具**：`backend/scripts/verify_deep_chain.py`——30 层追问的运行时回归脚本，校验上下文完整性、预算封顶、摘要沉淀与查询成本，可进 CI。
 4. **架构文档**：`docs/architecture.md`（本仓库首份架构图文档）。
 
+## 2b. 已执行（2026-09-18 可维护性重构，四阶段八提交）
+
+1. **后端仓储收口**：services 层 16 处 `repo.db` 穿透全部清零（admin 统计→`overview_stats()`；账号提权/模型服务写路径、mvp 的 artifact/event/tracking 落库、agent 迭代计数分别下沉 commerce_repo / harness_repo，方法自带 commit）。事务语义不变：routes 层零 commit + 请求末尾 rollback 的约束下，每条写路径的落库点收口进仓储。
+2. **前端网络层统一**：`services/apiClient.ts` 收编双 store 重复的 authHeaders/request/streamRequest/streamEvents。
+3. **类型按域拆分**：`types/commerce.ts` + `types/harness.ts`，清除 18 个遗留死类型；`types/index.ts` 变 re-export，消费方 import 路径不变。
+4. **useCommerceStore 切片组合**：765 行拆为 auth/commerce/workspace/admin 四片 + storeShape 交集类型；对外 hook 名与全部 selector 名不变，消费组件零改动；删除无消费者的 `loadOrders`。
+5. **ProjectWorkspace 拆分**：589 行拆为 AgentChatPanel / ProjectTreePanel / RightSidebarBody / workspace/report.ts；父组件 255 行只留布局、tab 状态与跨块状态。
+6. **e2e 修复**：`harness-workspace.spec.ts` 补 Agent 工作台 tab 切换步骤（该失败在重构前已存在——8-30 引入 CoachChatPanel 默认 tab 后 spec 未跟进），现 Playwright 2/2 通过，Agent 审批流端到端护住重构后组件。
+7. 验证基线：后端 102 passed + 深链脚本 OK；前端 typecheck + 8 unit + build + Playwright 2 passed。
+
+
 ## 3. 改进路线（按优先级，全部追问安全）
 
 ### P1 上线前置（真实用户 > 1 人时必须）

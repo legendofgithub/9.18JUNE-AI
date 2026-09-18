@@ -1,6 +1,5 @@
-import type { CoachStatus, ModelServiceConfig, Order, CoachStartResult } from '../../types';
+import type { CoachStatus, ModelServiceConfig, CoachStartResult } from '../../types';
 import { request } from '../../services/apiClient';
-import { trackEvent } from '../../services/analyticsService';
 import type { CommerceSliceCreator } from './storeShape';
 
 /** 订单支付 + 训练师启动 + 模型服务（BYOK）域 */
@@ -8,13 +7,7 @@ export interface CommerceSlice {
   coachStatus: CoachStatus | null;
   modelServices: ModelServiceConfig[];
   selectedModel: string;
-  lastOrder: Order | null;
-  orders: Order[];
 
-  createOrder: (productId: string) => Promise<void>;
-  confirmOrder: (transactionId: string) => Promise<void>;
-  refreshOrderStatus: () => Promise<boolean>;
-  dismissOrder: () => void;
   startCoach: (modelName: string, baseUrl: string, apiKey?: string) => Promise<boolean>;
   loadModelServices: () => Promise<void>;
   saveModelService: (payload: any, serviceId?: string) => Promise<ModelServiceConfig | null>;
@@ -27,81 +20,6 @@ export const createCommerceSlice: CommerceSliceCreator<CommerceSlice> = (set, ge
   coachStatus: null,
   modelServices: [],
   selectedModel: '',
-  lastOrder: null,
-  orders: [],
-
-  createOrder: async productId => {
-    set({ isBusy: true, error: null });
-    try {
-      const order = await request<Order>('/orders', {
-        method: 'POST',
-        body: JSON.stringify({ product_id: productId }),
-      });
-      trackEvent('commerce.checkout_start', '#/payment', {
-        product_id: productId,
-        provider: order.provider,
-      });
-      const [orders, coachStatus] = await Promise.all([
-        request<Order[]>('/orders'),
-        request<CoachStatus>('/coach/status'),
-      ]);
-      set({ lastOrder: order, coachStatus });
-    } catch (error: any) {
-      set({ error: error?.message || '订单创建失败' });
-    } finally {
-      set({ isBusy: false });
-    }
-  },
-
-  confirmOrder: async transactionId => {
-    const order = get().lastOrder;
-    if (!order) return;
-    set({ isBusy: true, error: null });
-    try {
-      const paid = await request<Order>(`/orders/${order.id}/confirm`, {
-        method: 'POST',
-        body: JSON.stringify({ provider_transaction_id: transactionId }),
-      });
-      trackEvent('commerce.payment_confirmed', '#/payment', {
-        provider: paid.provider,
-      });
-      const [orders, coachStatus] = await Promise.all([
-        request<Order[]>('/orders'),
-        request<CoachStatus>('/coach/status'),
-      ]);
-      set({ lastOrder: paid, coachStatus });
-    } catch (error: any) {
-      set({ error: error?.message || '支付确认失败' });
-    } finally {
-      set({ isBusy: false });
-    }
-  },
-
-  refreshOrderStatus: async () => {
-    const order = get().lastOrder;
-    if (!order) return false;
-    set({ isBusy: true, error: null });
-    try {
-      const [orders, coachStatus] = await Promise.all([
-        request<Order[]>('/orders'),
-        request<CoachStatus>('/coach/status'),
-      ]);
-      const updated = orders.find(item => item.id === order.id) || order;
-      set({ orders, coachStatus, lastOrder: updated });
-      if (updated.status === 'paid') {
-        trackEvent('commerce.payment_detected', '#/payment', { provider: updated.provider });
-        return true;
-      }
-      return false;
-    } catch (error: any) {
-      set({ error: error?.message || '支付状态刷新失败' });
-      return false;
-    } finally {
-      set({ isBusy: false });
-    }
-  },
-
-  dismissOrder: () => set({ lastOrder: null }),
 
   startCoach: async (modelName, baseUrl, apiKey = '') => {
     set({ isBusy: true, error: null });

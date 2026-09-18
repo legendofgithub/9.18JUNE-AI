@@ -1,4 +1,4 @@
-import type { AdminAuditLog, AdminOrder, AdminOverview, AdminUser } from '../../types';
+import type { AdminAuditLog, AdminOverview, AdminUser } from '../../types';
 import { request } from '../../services/apiClient';
 import type { CommerceSliceCreator } from './storeShape';
 
@@ -6,7 +6,6 @@ import type { CommerceSliceCreator } from './storeShape';
 export interface AdminSlice {
   adminOverview: AdminOverview | null;
   adminUsers: AdminUser[];
-  adminOrders: AdminOrder[];
   adminAuditLogs: AdminAuditLog[];
   adminError: string | null;
   isAdminBusy: boolean;
@@ -18,7 +17,6 @@ export interface AdminSlice {
 export const createAdminSlice: CommerceSliceCreator<AdminSlice> = (set, get) => ({
   adminOverview: null,
   adminUsers: [],
-  adminOrders: [],
   adminAuditLogs: [],
   adminError: null,
   isAdminBusy: false,
@@ -26,13 +24,12 @@ export const createAdminSlice: CommerceSliceCreator<AdminSlice> = (set, get) => 
   loadAdminData: async () => {
     set({ isAdminBusy: true, adminError: null });
     try {
-      const [overview, users, orders, auditLogs] = await Promise.all([
+      const [overview, users, auditLogs] = await Promise.all([
         request<AdminOverview>('/admin/overview'),
         request<AdminUser[]>('/admin/users'),
-        request<AdminOrder[]>('/admin/orders'),
         request<AdminAuditLog[]>('/admin/audit-logs'),
       ]);
-      set({ adminOverview: overview, adminUsers: users, adminOrders: orders, adminAuditLogs: auditLogs });
+      set({ adminOverview: overview, adminUsers: users, adminAuditLogs: auditLogs });
     } catch (error: any) {
       set({ adminError: error?.message || '管理数据加载失败' });
     } finally {

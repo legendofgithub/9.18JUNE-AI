@@ -54,38 +54,10 @@ export interface CommerceUser {
   token: string;
 }
 
-export interface Product {
-  id: string;
-  name: string;
-  description: string;
-  priceCents: number;
-  priceYuan: number;
-  pathCount: number;
-}
-
-export interface Order {
-  id: string;
-  productId: string;
-  productName: string;
-  amountCents: number;
-  pathCount: number;
-  status: 'pending' | 'paid' | 'cancelled';
-  provider: string;
-  providerOrderId: string;
-  paymentUrl?: string | null;
-  providerTransactionId?: string | null;
-  createdAt: number;
-  paidAt?: number | null;
-  sandbox?: boolean;
-}
-
 export interface AdminOverview {
   totalUsers: number;
-  paidUsers: number;
   disabledUsers: number;
   activeRuns: number;
-  pendingOrders: number;
-  revenueCents: number;
   analyticsEvents: number;
 }
 
@@ -98,20 +70,6 @@ export interface AdminUser {
   isDisabled: boolean;
   disabledReason: string;
   createdAt: number;
-  orderCount: number;
-  paidCount: number;
-}
-
-export interface AdminOrder {
-  id: string;
-  ownerAccount: string;
-  productName: string;
-  amountCents: number;
-  status: string;
-  provider: string;
-  providerOrderId: string;
-  createdAt: number;
-  paidAt?: number | null;
 }
 
 export interface AdminAuditLog {

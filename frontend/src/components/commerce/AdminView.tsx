@@ -8,20 +8,14 @@ const copy = {
     title: '管理后台',
     refresh: '刷新',
     users: '用户',
-    orders: '订单',
     audit: '审计日志',
     totalUsers: '用户',
-    paidUsers: '付费用户',
     disabledUsers: '禁用用户',
     activeRuns: '进行路径',
-    pendingOrders: '待支付',
-    revenue: '收入',
     events: '埋点事件',
     account: '账号',
     email: '邮箱',
     status: '状态',
-    ordersCount: '订单',
-    paidCount: '付费',
     action: '操作',
     disable: '禁用',
     enable: '启用',
@@ -31,9 +25,6 @@ const copy = {
     admin: '管理员',
     normal: '正常',
     disabled: '已禁用',
-    product: '商品',
-    amount: '金额',
-    provider: '渠道',
     time: '时间',
     actor: '操作者',
     event: '事件',
@@ -44,20 +35,14 @@ const copy = {
     title: 'Admin console',
     refresh: 'Refresh',
     users: 'Users',
-    orders: 'Orders',
     audit: 'Audit logs',
     totalUsers: 'Users',
-    paidUsers: 'Paid users',
     disabledUsers: 'Disabled',
     activeRuns: 'Active runs',
-    pendingOrders: 'Pending orders',
-    revenue: 'Revenue',
     events: 'Analytics events',
     account: 'Account',
     email: 'Email',
     status: 'Status',
-    ordersCount: 'Orders',
-    paidCount: 'Paid',
     action: 'Action',
     disable: 'Disable',
     enable: 'Enable',
@@ -67,9 +52,6 @@ const copy = {
     admin: 'Admin',
     normal: 'Active',
     disabled: 'Disabled',
-    product: 'Product',
-    amount: 'Amount',
-    provider: 'Provider',
     time: 'Time',
     actor: 'Actor',
     event: 'Event',
@@ -90,7 +72,6 @@ function formatTime(timestamp: number, language: SiteLanguage) {
 export default function AdminView({ language }: { language: SiteLanguage }) {
   const overview = useCommerceStore(s => s.adminOverview);
   const users = useCommerceStore(s => s.adminUsers);
-  const orders = useCommerceStore(s => s.adminOrders);
   const auditLogs = useCommerceStore(s => s.adminAuditLogs);
   const error = useCommerceStore(s => s.adminError);
   const isBusy = useCommerceStore(s => s.isAdminBusy);
@@ -106,11 +87,8 @@ export default function AdminView({ language }: { language: SiteLanguage }) {
 
   const metrics = overview ? [
     { label: text.totalUsers, value: overview.totalUsers },
-    { label: text.paidUsers, value: overview.paidUsers },
     { label: text.disabledUsers, value: overview.disabledUsers },
     { label: text.activeRuns, value: overview.activeRuns },
-    { label: text.pendingOrders, value: overview.pendingOrders },
-    { label: text.revenue, value: `¥${(overview.revenueCents / 100).toFixed(2)}` },
     { label: text.events, value: overview.analyticsEvents },
   ] : [];
 
@@ -152,8 +130,6 @@ export default function AdminView({ language }: { language: SiteLanguage }) {
                 <th>{text.account}</th>
                 <th>{text.email}</th>
                 <th>{text.status}</th>
-                <th>{text.ordersCount}</th>
-                <th>{text.paidCount}</th>
                 <th>{text.action}</th>
               </tr>
             </thead>
@@ -167,8 +143,6 @@ export default function AdminView({ language }: { language: SiteLanguage }) {
                       {user.isAdmin ? text.admin : user.isDisabled ? text.disabled : text.normal}
                     </span>
                   </td>
-                  <td>{user.orderCount}</td>
-                  <td>{user.paidCount}</td>
                   <td>
                     {user.isAdmin ? (
                       <span className="admin-no-action">-</span>
@@ -217,36 +191,6 @@ export default function AdminView({ language }: { language: SiteLanguage }) {
             </button>
           </div>
         )}
-      </section>
-
-      <section className="admin-panel">
-        <h2>{text.orders}</h2>
-        <div className="admin-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{text.account}</th>
-                <th>{text.product}</th>
-                <th>{text.amount}</th>
-                <th>{text.status}</th>
-                <th>{text.provider}</th>
-                <th>{text.time}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(order => (
-                <tr key={order.id}>
-                  <td>{order.ownerAccount}</td>
-                  <td>{order.productName}</td>
-                  <td>¥{(order.amountCents / 100).toFixed(2)}</td>
-                  <td>{order.status}</td>
-                  <td>{order.provider}</td>
-                  <td>{formatTime(order.createdAt, language)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
 
       <section className="admin-panel">

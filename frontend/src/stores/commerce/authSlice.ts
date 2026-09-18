@@ -1,11 +1,10 @@
-import type { CommerceUser, Product, CoachStatus, Order } from '../../types';
+import type { CommerceUser, CoachStatus } from '../../types';
 import { request, USER_TOKEN_KEY } from '../../services/apiClient';
 import { trackEvent } from '../../services/analyticsService';
 import type { CommerceSliceCreator } from './storeShape';
 
 export interface AuthSlice {
   user: CommerceUser | null;
-  products: Product[];
   isBootstrapping: boolean;
 
   bootstrap: () => Promise<void>;
@@ -18,7 +17,6 @@ let bootstrapPromise: Promise<void> | null = null;
 
 export const createAuthSlice: CommerceSliceCreator<AuthSlice> = (set, get) => ({
   user: null,
-  products: [],
   isBootstrapping: true,
 
   bootstrap: async () => {
@@ -27,19 +25,11 @@ export const createAuthSlice: CommerceSliceCreator<AuthSlice> = (set, get) => ({
       set({ isBootstrapping: true, error: null });
       try {
         const token = localStorage.getItem(USER_TOKEN_KEY);
-        if (!token) {
-          const products = await request<Product[]>('/products');
-          set({ products });
-          return;
-        }
+        if (!token) return;
 
         const user = await request<CommerceUser>('/auth/me');
-        const [products, orders, coachStatus] = await Promise.all([
-          request<Product[]>('/products'),
-          request<Order[]>('/orders'),
-          request<CoachStatus>('/coach/status'),
-        ]);
-        set({ user, products, orders, coachStatus });
+        const coachStatus = await request<CoachStatus>('/coach/status');
+        set({ user, coachStatus });
         await get().loadModelServices();
         await get().loadWorkspace();
       } catch {
@@ -66,17 +56,13 @@ export const createAuthSlice: CommerceSliceCreator<AuthSlice> = (set, get) => ({
       });
       trackEvent('auth.login_success');
       localStorage.setItem(USER_TOKEN_KEY, user.token);
-      const [products, orders, coachStatus] = await Promise.all([
-        request<Product[]>('/products'),
-        request<Order[]>('/orders'),
-        request<CoachStatus>('/coach/status'),
-      ]);
-      set({ user, products, orders, coachStatus, skill: null, runs: [], currentRun: null });
+      const coachStatus = await request<CoachStatus>('/coach/status');
+      set({ user, coachStatus, skill: null, runs: [], currentRun: null });
       await get().loadModelServices();
       await get().loadWorkspace();
     } catch (error: any) {
       localStorage.removeItem(USER_TOKEN_KEY);
-      set({ user: null, products: [], coachStatus: null, skill: null, runs: [], currentRun: null });
+      set({ user: null, coachStatus: null, skill: null, runs: [], currentRun: null });
       set({ error: error?.message || '登录失败' });
     } finally {
       set({ isBusy: false });
@@ -91,12 +77,8 @@ export const createAuthSlice: CommerceSliceCreator<AuthSlice> = (set, get) => ({
         body: JSON.stringify({ email, password, display_name: displayName }),
       });
       localStorage.setItem(USER_TOKEN_KEY, user.token);
-      const [products, orders, coachStatus] = await Promise.all([
-        request<Product[]>('/products'),
-        request<Order[]>('/orders'),
-        request<CoachStatus>('/coach/status'),
-      ]);
-      set({ user, products, orders, coachStatus, skill: null, runs: [], currentRun: null });
+      const coachStatus = await request<CoachStatus>('/coach/status');
+      set({ user, coachStatus, skill: null, runs: [], currentRun: null });
     } catch (error: any) {
       set({ error: error?.message || '注册失败' });
     } finally {
@@ -116,8 +98,6 @@ export const createAuthSlice: CommerceSliceCreator<AuthSlice> = (set, get) => ({
       currentRun: null,
       followUpMessages: {},
       followUpMeta: {},
-      lastOrder: null,
-      orders: [],
       error: null,
     });
   },

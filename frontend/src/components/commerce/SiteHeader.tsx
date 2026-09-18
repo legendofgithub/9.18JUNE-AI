@@ -3,7 +3,7 @@ import { Globe, LayoutDashboard, LogIn, LogOut, Route, ShieldCheck, UserRound } 
 import useCommerceStore from '../../stores/useCommerceStore';
 
 export type SiteLanguage = 'zh' | 'en';
-export type SiteRoute = 'home' | 'product' | 'payment' | 'success' | 'studio' | 'admin';
+export type SiteRoute = 'home' | 'studio' | 'admin';
 
 interface SiteHeaderProps {
   language: SiteLanguage;
@@ -24,8 +24,6 @@ const copy = {
     password: '密码',
     encrypted: '已加密保存',
     email: '邮箱',
-    history: '已购买历史',
-    emptyHistory: '暂无购买记录',
     admin: '管理员',
     adminConsole: '管理后台',
   },
@@ -41,23 +39,13 @@ const copy = {
     password: 'Password',
     encrypted: 'Encrypted',
     email: 'Email',
-    history: 'Purchase history',
-    emptyHistory: 'No purchases yet',
     admin: 'Admin',
     adminConsole: 'Admin console',
   },
 };
 
-function formatOrderTime(timestamp: number, language: SiteLanguage) {
-  return new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'en-US', {
-    month: '2-digit',
-    day: '2-digit',
-  }).format(timestamp);
-}
-
 export default function SiteHeader({ language, onLanguageChange, route }: SiteHeaderProps) {
   const user = useCommerceStore(s => s.user);
-  const orders = useCommerceStore(s => s.orders);
   const logout = useCommerceStore(s => s.logout);
   const text = copy[language];
   const [accountOpen, setAccountOpen] = useState(false);
@@ -158,21 +146,6 @@ export default function SiteHeader({ language, onLanguageChange, route }: SiteHe
                     <dd>•••••••• · {text.encrypted}</dd>
                   </div>
                 </dl>
-                <div className="site-history-title">{text.history}</div>
-                {orders.length ? (
-                  <ul className="site-history-list">
-                    {orders.slice(0, 5).map(order => (
-                      <li key={order.id}>
-                        <span>{order.productName}</span>
-                        <span>
-                          {formatOrderTime(order.createdAt, language)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="site-history-empty">{text.emptyHistory}</p>
-                )}
                 {user.isAdmin && (
                   <a className="site-admin-console-link" href="#/admin">
                     <LayoutDashboard size={13} />

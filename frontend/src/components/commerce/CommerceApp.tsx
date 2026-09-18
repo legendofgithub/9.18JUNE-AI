@@ -5,17 +5,11 @@ import { trackEvent } from '../../services/analyticsService';
 import ErrorBoundary from '../ErrorBoundary';
 import AdminView from './AdminView';
 import LandingView from './LandingView';
-import PaymentView from './PaymentView';
-import ProductPromoView from './ProductPromoView';
-import PurchaseSuccessView from './PurchaseSuccessView';
 import SiteHeader, { type SiteLanguage, type SiteRoute } from './SiteHeader';
 import WorkspaceView from './WorkspaceView';
 
 function readRoute(): SiteRoute {
   if (window.location.hash.startsWith('#/studio')) return 'studio';
-  if (window.location.hash.startsWith('#/product')) return 'product';
-  if (window.location.hash.startsWith('#/payment')) return 'payment';
-  if (window.location.hash.startsWith('#/success')) return 'success';
   if (window.location.hash.startsWith('#/admin')) return 'admin';
   return 'home';
 }
@@ -114,12 +108,9 @@ export default function CommerceApp() {
 
   return (
     <ErrorBoundary name="commerce-app">
-      <div className={effectiveRoute === 'studio' ? 'site-root studio-mode' : effectiveRoute === 'product' ? 'site-root product-mode' : 'site-root'}>
+      <div className={effectiveRoute === 'studio' ? 'site-root studio-mode' : 'site-root'}>
         <SiteHeader language={language} onLanguageChange={setLanguage} route={effectiveRoute} />
         {effectiveRoute === 'home' && <LandingView language={language} onEnterStudio={enterStudio} />}
-        {effectiveRoute === 'product' && <ProductPromoView language={language} />}
-        {effectiveRoute === 'payment' && <PaymentView language={language} />}
-        {effectiveRoute === 'success' && <PurchaseSuccessView language={language} onEnterStudio={enterStudio} />}
         {effectiveRoute === 'studio' && <WorkspaceView language={language} />}
         {effectiveRoute === 'admin' && <AdminView language={language} />}
       </div>

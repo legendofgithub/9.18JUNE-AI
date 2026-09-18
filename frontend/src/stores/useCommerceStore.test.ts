@@ -121,7 +121,6 @@ describe('useCommerceStore 认证流程', () => {
     expect(state.user).toBeNull();
     expect(state.currentRun).toBeNull();
     expect(state.runs).toEqual([]);
-    expect(state.orders).toEqual([]);
     expect(state.modelServices).toEqual([]);
     expect(state.error).toBeNull();
   });

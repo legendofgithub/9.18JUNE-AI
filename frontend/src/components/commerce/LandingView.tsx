@@ -3,9 +3,10 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
-  CreditCard,
-  ExternalLink,
+  Layers,
   Loader2,
+  MessageCircleQuestion,
+  Repeat2,
   Sparkles,
   Target,
 } from 'lucide-react';
@@ -17,73 +18,57 @@ import AuthView from './AuthView';
 
 const copy = {
   zh: {
-    eyebrow: 'Vibe Coding 商业路径',
-    title: '把 AI 变成可交付、可售卖的生产力',
-    subtitle: 'June AI 面向零基础商业者，用自然语言推进 10 个关键动作：付费人群、可售卖结果、第一版 MVP、报价获客、首次交付与复盘。',
-    secondaryCta: '查看套餐',
-    productTitle: '产品介绍',
-    productLead: '一位超级个体训练师，一条商业闭环路径',
+    eyebrow: '免费 · 无限追问 · 自带 AI',
+    title: '一层追不完，就再追一层',
+    subtitle: 'June AI 超级个体训练师陪你把想法做成可售卖的产品：任意一句话都能继续追问，层级不限；追问的结论一键采纳为交付物，AI 使用费用走你自己的工具账户，产品完全免费。',
+    secondaryCta: '了解无限追问',
+    productTitle: '为什么是无限追问',
+    productLead: '别人教你一次听懂，我们陪你问到懂为止',
     features: [
-      { title: '商业目标先行', body: '从愿意付费的人群和痛点开始，而不是从技术栈开始。' },
-      { title: '自然语言造产品', body: '用“用户看到什么、点什么、得到什么”描述 MVP，由 AI 完成实现。' },
-      { title: '交付可验收', body: '每个节点都有客观交付物，完成后归档，形成可复盘资产。' },
+      { title: '层级不限的追问', body: '对任何一句话继续追问，线程像树枝一样层层生长，没有次数和层级上限。' },
+      { title: '越问越聚焦的记忆', body: '近层保留原文、远层自动压缩成结论，链条再长也不会失忆，更不会撑爆上下文。' },
+      { title: '结论落地为交付物', body: '追问出结果不是终点：一键采纳，写入当前节点的交付物，聊过的每一步都算数。' },
     ],
-    workflowTitle: '10 节点商业 MVP 路径',
+    workflowTitle: '追问所服务的 10 节点商业路径',
     workflow: ['人群与痛点', '可售卖结果', '商业需求简报', '产品形态', '第一版 MVP', '迭代试用', '报价收款', '获客名单', '首次交付', '复盘迭代'],
-    pricingTitle: '购买解锁',
-    pricingNote: '一次性解锁超级个体训练师；产品承诺确定性交付物，不承诺收入。',
-    purchase: '购买产品',
     studio: '模型服务',
     accountTitle: '账户状态',
-    unlockStatus: '训练师权限',
+    freeBadge: '免费使用 · 无限追问',
     enterStudio: '进入模型服务',
-    payTitle: '确认支付',
-    merchantOrder: '商户单号',
-    transaction: '沙箱流水号',
-    confirm: '确认到账',
-    callback: '支付完成后即可启动超级个体训练师。',
-    payOnline: '打开 Stripe 支付',
     aboutTitle: '关于我们',
     about: 'OPC 团队能在这条路上受益，靠的不是赌对了什么，而是顺势借到了一股时代大势所趋——AI 正在把创造与变现的能力交回给每一个普通人。我们只是把超级个体的能力沉淀成可复制的训练流程，被这股大势托着往前走；愿意参与、愿意行动的个体，也自然会被它一并托起。',
     stats: [
+      { value: '∞', label: '追问层级' },
       { value: '10', label: '必修商业节点' },
       { value: 'BYOK', label: '自带模型密钥' },
-      { value: '39元', label: '一次性解锁' },
+      { value: '¥0', label: '完全免费' },
     ],
   },
   en: {
-    eyebrow: 'Vibe Coding Business Path',
-    title: 'Turn AI into deliverable, sellable productivity',
-    subtitle: 'June AI guides non-technical founders through ten commercial actions: buyers, sellable outcomes, first MVP, pricing, acquisition, delivery, and review.',
-    secondaryCta: 'View plans',
-    productTitle: 'Products',
-    productLead: 'One coach, one complete commercial loop',
+    eyebrow: 'Free · Unlimited follow-ups · BYOK',
+    title: 'Ask again. And again. As deep as you need.',
+    subtitle: 'The June AI Super-Solo Coach helps you turn an idea into a sellable product: follow up on any sentence, unlimited levels; adopt conclusions as deliverables in one click; AI usage runs on your own account — the product is completely free.',
+    secondaryCta: 'See unlimited follow-ups',
+    productTitle: 'Why unlimited follow-ups',
+    productLead: 'Others explain once; we stay until you get it',
     features: [
-      { title: 'Business first', body: 'Start from paying customers and urgent pains, not technology stacks.' },
-      { title: 'Build by language', body: 'Describe what users see, click, and receive; AI handles the implementation.' },
-      { title: 'Verifiable delivery', body: 'Every step has an objective artifact and becomes a reusable asset.' },
+      { title: 'Unlimited depth', body: 'Follow up on any sentence; threads branch like a tree with no caps on count or depth.' },
+      { title: 'Memory that stays sharp', body: 'Recent layers keep full text, distant layers compress into conclusions — long chains never lose the plot.' },
+      { title: 'Conclusions become deliverables', body: 'A follow-up answer is not the end: adopt it in one click into the current step’s artifact.' },
     ],
-    workflowTitle: '10-step commercial MVP path',
+    workflowTitle: 'The 10-step path your questions serve',
     workflow: ['Buyers & pains', 'Sellable outcome', 'Business brief', 'Product shape', 'First MVP', 'Iteration', 'Pricing', 'Acquisition', 'First delivery', 'Review'],
-    pricingTitle: 'Unlock',
-    pricingNote: 'One-time unlock for the Super-Solo Coach persona. June sells deterministic deliverables, never income guarantees.',
-    purchase: 'Buy Product',
     studio: 'Model Studio',
     accountTitle: 'Account',
-    unlockStatus: 'Coach access',
+    freeBadge: 'Free · Unlimited follow-ups',
     enterStudio: 'Open Model Studio',
-    payTitle: 'Confirm payment',
-    merchantOrder: 'Merchant order',
-    transaction: 'Sandbox transaction ID',
-    confirm: 'Confirm payment',
-    callback: 'Start the Super-Solo Coach after payment succeeds.',
-    payOnline: 'Open Stripe Checkout',
     aboutTitle: 'About Us',
     about: 'The OPC team’s gains here came not from betting right, but from riding an inevitable tide of the era — AI is returning the power to create and earn to ordinary people. We simply codified super-solo capability into a repeatable training flow, carried forward by that tide; those who join and act get lifted by it too.',
     stats: [
+      { value: '∞', label: 'follow-up levels' },
       { value: '10', label: 'required steps' },
       { value: 'BYOK', label: 'bring your own model key' },
-      { value: '¥39', label: 'one-time unlock' },
+      { value: '$0', label: 'completely free' },
     ],
   },
 };
@@ -92,6 +77,8 @@ interface LandingViewProps {
   language: SiteLanguage;
   onEnterStudio: () => void;
 }
+
+const FEATURE_ICONS = [Layers, MessageCircleQuestion, Repeat2];
 
 /** 绿白相间的流苏垂帘装饰：铺满整条基准线，鼠标划过时被拨动 */
 function HomeTassels() {
@@ -180,20 +167,10 @@ function HomeTassels() {
 
 export default function LandingView({ language, onEnterStudio }: LandingViewProps) {
   const user = useCommerceStore(s => s.user);
-  const products = useCommerceStore(s => s.products);
-  const coachStatus = useCommerceStore(s => s.coachStatus);
-  const lastOrder = useCommerceStore(s => s.lastOrder);
   const isBusy = useCommerceStore(s => s.isBusy);
   const error = useCommerceStore(s => s.error);
-  const confirmOrder = useCommerceStore(s => s.confirmOrder);
-  const refreshOrderStatus = useCommerceStore(s => s.refreshOrderStatus);
   const clearError = useCommerceStore(s => s.clearError);
   const text = copy[language];
-  const [transactionId, setTransactionId] = useState('');
-
-  useEffect(() => {
-    if (lastOrder?.status === 'pending') setTransactionId(`SANDBOX-${lastOrder.providerOrderId}`);
-  }, [lastOrder]);
 
   return (
     <main className="site-home">
@@ -207,71 +184,32 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
             <h1>{text.title}</h1>
             <p>{text.subtitle}</p>
             <div className="home-hero-actions">
-              <a className="site-ghost-link" href="#pricing">
-                {text.secondaryCta}
-                <ArrowRight size={15} />
-              </a>
+              {user ? (
+                <button type="button" className="site-primary-link" onClick={onEnterStudio}>
+                  {text.enterStudio}
+                  <ArrowRight size={15} />
+                </button>
+              ) : (
+                <a className="site-ghost-link" href="#product-intro">
+                  {text.secondaryCta}
+                  <ArrowRight size={15} />
+                </a>
+              )}
             </div>
           </div>
 
-          <aside className="home-auth-column" aria-label={language === 'zh' ? '账号与购买' : 'Account and purchase'}>
+          <aside className="home-auth-column" aria-label={language === 'zh' ? '账号' : 'Account'}>
             {!user ? (
               <AuthView language={language} />
-            ) : lastOrder?.status === 'pending' ? (
-              <div className="coach-card p-5">
-                <h2>{text.payTitle}</h2>
-                <dl className="home-order-meta">
-                  <div>
-                    <dt>{text.merchantOrder}</dt>
-                    <dd>{lastOrder.providerOrderId}</dd>
-                  </div>
-                  <div>
-                    <dt>{language === 'zh' ? '商品' : 'Product'}</dt>
-                    <dd>{lastOrder.productName}</dd>
-                  </div>
-                </dl>
-                {lastOrder.sandbox ? (
-                  <>
-                    <label className="coach-label mt-4" htmlFor="transactionId">{text.transaction}</label>
-                    <input id="transactionId" className="coach-input" value={transactionId} onChange={event => setTransactionId(event.target.value)} />
-                    <button className="coach-primary-button w-full mt-3" disabled={isBusy || !transactionId.trim()} onClick={() => void confirmOrder(transactionId.trim())}>
-                      {isBusy && <Loader2 size={15} className="animate-spin" />}
-                      {text.confirm}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="coach-primary-button w-full mt-3"
-                      disabled={isBusy}
-                      onClick={() => {
-                        if (lastOrder.paymentUrl) window.open(lastOrder.paymentUrl, '_blank', 'noopener,noreferrer');
-                      }}
-                    >
-                      <ExternalLink size={15} />
-                      {text.payOnline}
-                    </button>
-                    <button
-                      type="button"
-                      className="coach-secondary-button w-full mt-2"
-                      disabled={isBusy}
-                      onClick={() => void refreshOrderStatus()}
-                    >
-                      {language === 'zh' ? '我已完成支付' : 'I have paid'}
-                    </button>
-                    <p className="home-pricing-note mt-3">{text.callback}</p>
-                  </>
-                )}
-              </div>
             ) : (
               <div className="coach-card p-5">
                 <h2>{text.accountTitle}</h2>
                 <p className="home-account-name">{user.displayName || user.account}</p>
                 <p className="home-path-count">
-                  {text.unlockStatus}: <strong>{coachStatus?.paid ? (language === 'zh' ? '已解锁' : 'Unlocked') : language === 'zh' ? '未解锁' : 'Locked'}</strong>
+                  {text.freeBadge}
                 </p>
-                <button type="button" className="site-primary-link w-full" onClick={onEnterStudio}>
+                <button type="button" className="site-primary-link w-full" onClick={onEnterStudio} disabled={isBusy}>
+                  {isBusy && <Loader2 size={15} className="animate-spin" />}
                   <ArrowRight size={15} />
                   {text.enterStudio}
                 </button>
@@ -290,13 +228,16 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
           </span>
           <h2>{text.productLead}</h2>
           <div className="home-feature-grid">
-            {text.features.map(feature => (
-              <article key={feature.title} className="home-feature-card">
-                <BadgeCheck size={18} />
-                <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
-              </article>
-            ))}
+            {text.features.map((feature, index) => {
+              const Icon = FEATURE_ICONS[index] ?? BadgeCheck;
+              return (
+                <article key={feature.title} className="home-feature-card">
+                  <Icon size={18} />
+                  <h3>{feature.title}</h3>
+                  <p>{feature.body}</p>
+                </article>
+              );
+            })}
           </div>
 
           <div className="home-product-visual">
@@ -323,37 +264,24 @@ export default function LandingView({ language, onEnterStudio }: LandingViewProp
         </div>
       </section>
 
-      <section id="pricing" className="home-section home-pricing">
+      <section id="community" className="home-section home-pricing">
         <div className="home-section-inner">
-          <span className="home-section-label"><CreditCard size={15} />{text.pricingTitle}</span>
           <div className="home-pricing-grid">
-            {products.map(product => (
-              <article key={product.id} className="home-price-card">
-                <span>{language === 'zh' ? '一次性解锁' : 'One-time unlock'}</span>
-                <strong>{product.priceYuan}</strong>
-                <p>{product.description}</p>
-                <a className="site-primary-link" href="#/product">
-                  <CreditCard size={14} />
-                  {text.purchase}
-                </a>
-              </article>
-            ))}
             <article className="home-price-card home-community-card" aria-label={language === 'zh' ? '社群入口' : 'Community entry'}>
-              <span>{language === 'zh' ? '购买后加入' : 'After purchase'}</span>
+              <span>{language === 'zh' ? '免费加入' : 'Join for free'}</span>
               <strong className="home-community-title">
-                {language === 'zh' ? '学员社群' : 'Member Community'}
+                {language === 'zh' ? '使用者社群' : 'Community'}
               </strong>
               <div className="home-qr-code" aria-label={language === 'zh' ? '社群二维码' : 'Community QR code'}>
                 <QRCodeSVG value={COMMUNITY_URL} size={132} level="M" marginSize={1} />
               </div>
               <p>
                 {language === 'zh'
-                  ? '扫码进入学员社群入口，购买解锁后获取同步更新和交流支持。'
-                  : 'Scan to open the member community entry; unlocked members receive updates and peer support.'}
+                  ? '扫码进入使用者社群，获取同步更新和使用交流支持。'
+                  : 'Scan to open the community entry for updates and peer support.'}
               </p>
             </article>
           </div>
-          <p className="home-pricing-note">{text.pricingNote}</p>
         </div>
       </section>
 

@@ -1,7 +1,7 @@
 import time
 
 from ..core.exceptions import ForbiddenException, NotFoundException, ValidationException
-from ..models.database import AnalyticsEventModel, MvpRunModel, OrderModel, UserModel
+from ..models.database import UserModel
 from ..repositories.commerce_repo import CommerceRepository
 
 
@@ -11,17 +11,7 @@ class AdminService:
         self.auth_service = auth_service
 
     def overview(self) -> dict:
-        paid_rows = self.repo.db.query(OrderModel.owner_id).filter(OrderModel.status == "paid").distinct().all()
-        revenue_cents = self.repo.db.query(OrderModel.amount_cents).filter(OrderModel.status == "paid").all()
-        return {
-            "totalUsers": self.repo.db.query(UserModel).count(),
-            "paidUsers": len(paid_rows),
-            "disabledUsers": self.repo.db.query(UserModel).filter(UserModel.is_disabled.is_(True)).count(),
-            "activeRuns": self.repo.db.query(MvpRunModel).filter(MvpRunModel.status == "active").count(),
-            "pendingOrders": self.repo.db.query(OrderModel).filter(OrderModel.status == "pending").count(),
-            "revenueCents": sum(row[0] for row in revenue_cents),
-            "analyticsEvents": self.repo.db.query(AnalyticsEventModel).count(),
-        }
+        return self.repo.overview_stats()
 
     def list_users(self, search: str = "") -> list[dict]:
         users = self.repo.list_users(search)

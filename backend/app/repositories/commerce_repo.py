@@ -390,6 +390,20 @@ class CommerceRepository:
             query = query.filter(AnalyticsEventModel.event_name == name)
         return query.count()
 
+    def overview_stats(self) -> dict:
+        """管理后台指标卡的全部聚合统计（只读，单次调用）"""
+        paid_rows = self.db.query(OrderModel.owner_id).filter(OrderModel.status == "paid").distinct().all()
+        revenue_rows = self.db.query(OrderModel.amount_cents).filter(OrderModel.status == "paid").all()
+        return {
+            "totalUsers": self.db.query(UserModel).count(),
+            "paidUsers": len(paid_rows),
+            "disabledUsers": self.db.query(UserModel).filter(UserModel.is_disabled.is_(True)).count(),
+            "activeRuns": self.db.query(MvpRunModel).filter(MvpRunModel.status == "active").count(),
+            "pendingOrders": self.db.query(OrderModel).filter(OrderModel.status == "pending").count(),
+            "revenueCents": sum(row[0] for row in revenue_rows),
+            "analyticsEvents": self.db.query(AnalyticsEventModel).count(),
+        }
+
     def _grant_paths(self, owner_id: str, path_count: int) -> None:
         entitlement = self.get_entitlement(owner_id, create=False)
         if entitlement is None:

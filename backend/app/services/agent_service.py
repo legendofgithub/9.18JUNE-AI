@@ -322,8 +322,7 @@ class AgentService:
     async def _execute(self, run: AgentRunModel, project: HarnessProjectModel, session: SessionModel, temperature: float):
         try:
             for _ in range(max(0, 6 - run.iterations)):
-                run.iterations = int(run.iterations or 0)
-                self.repo.db.commit()
+                self.repo.normalize_agent_iterations(run)
                 context = self._build_context(project, session)
                 self.repo.save_agent_context(run, self._context_trace(context))
                 yield {"type": "context", "context": self._public_context(context)}
@@ -345,8 +344,7 @@ class AgentService:
                         "".join(chunks),
                         {"toolCalls": self._sanitize_tool_calls(tool_calls)},
                     )
-                    run.iterations += 1
-                    self.repo.db.commit()
+                    self.repo.bump_agent_iterations(run)
                     for call in tool_calls:
                         function = call.get("function", {})
                         name = str(function.get("name") or "")

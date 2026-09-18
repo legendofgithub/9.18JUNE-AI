@@ -302,6 +302,18 @@ class HarnessRepository:
         run.context_json = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
         self.db.commit()
 
+    def normalize_agent_iterations(self, run: AgentRunModel) -> int:
+        """迭代计数归一化并持久化（Agent 循环每轮开始时调用）"""
+        run.iterations = int(run.iterations or 0)
+        self.db.commit()
+        return run.iterations
+
+    def bump_agent_iterations(self, run: AgentRunModel) -> int:
+        """迭代完成时递增并立即持久化：SSE 中途崩溃后恢复不重放已计入的轮次"""
+        run.iterations = int(run.iterations or 0) + 1
+        self.db.commit()
+        return run.iterations
+
     def add_agent_event(self, run: AgentRunModel, event_type: str, payload: dict | None = None) -> AgentEventModel:
         event = AgentEventModel(
             agent_run_id=run.id,

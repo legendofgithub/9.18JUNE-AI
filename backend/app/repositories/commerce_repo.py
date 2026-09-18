@@ -570,6 +570,7 @@ class CommerceRepository:
         else:
             artifact.title = title or artifact.title or step.required_artifact
             artifact.content = content
+        self.db.commit()
         return artifact
 
     def refresh_run_progress(self, run: MvpRunModel) -> None:
@@ -596,6 +597,7 @@ class CommerceRepository:
             content=content,
             metadata_json=json.dumps(metadata, ensure_ascii=False),
         ))
+        self.db.commit()
 
     def apply_tracking(
         self, run: MvpRunModel, blocker: str, next_action: str, vertical: str, artifacts: list[dict]
@@ -616,3 +618,4 @@ class CommerceRepository:
                 str(item.get("title") or ""),
                 str(item.get("content") or ""),
             )
+        self.db.commit()

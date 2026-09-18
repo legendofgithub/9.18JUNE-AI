@@ -210,7 +210,6 @@ class MvpService:
                 self._apply_tracking(run, current, tracking, permission)
             else:
                 self.repo.add_event(run, current, "chat", visible[:500], {})
-                self.repo.db.commit()
             yield {
                 "done": True,
                 "run": self._run_summary(run),
@@ -307,7 +306,6 @@ class MvpService:
 
         self.repo.upsert_artifact(current, artifact_title, content)
         self.repo.add_event(run, current, "follow_up_adopted", artifact_title, {"threadId": thread_id})
-        self.repo.db.commit()
         return self.get_run_detail(owner_id, run_id)
 
     @staticmethod
@@ -629,7 +627,6 @@ class MvpService:
             permission_effect["reason"] = "read-only mode does not auto-save artifact drafts"
         event_tracking["permission_effect"] = permission_effect
         self.repo.add_event(run, current, "tracking", json.dumps(event_tracking, ensure_ascii=False)[:4000], event_tracking)
-        self.repo.db.commit()
 
     def _step_detail(self, step: RunStepModel) -> dict:
         tool = STEP_TOOLS[step.step_key]

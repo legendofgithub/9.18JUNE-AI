@@ -29,7 +29,7 @@ June AI 帮助不学技术的用户，用自然语言指挥 AI 做出一个可�
 
 ## 本地启动
 
-**注意：用 `backend/.venv`，根目录 `.venv` 的系统 Python 已失效；`run.bat` 目前不可用。**
+**注意：必须用 `backend/.venv`（根目录 `.venv` 的系统 Python 已失效）。旧的 `run.bat`/`setup.bat` 启动链已移除。**
 
 方式一（最简单）：前端已有构建产物时，只启动后端即可获得完整产品：
 

@@ -76,22 +76,6 @@ body {
 .typing-dot:nth-child(2) { animation-delay: 0.2s; }
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
-/* ===== Markdown Prose ===== */
-.prose { color: var(--june-text); line-height: 1.7; font-size: 14px; }
-.prose p { margin: 0.5em 0; }
-.prose h1, .prose h2, .prose h3, .prose h4 { color: var(--june-text-bright); font-weight: 600; margin-top: 1.2em; margin-bottom: 0.5em; }
-.prose h1 { font-size: 1.4em; }
-.prose h2 { font-size: 1.25em; }
-.prose h3 { font-size: 1.1em; }
-.prose h4 { font-size: 1em; }
-.prose ul, .prose ol { margin: 0.5em 0; padding-left: 1.5em; }
-.prose ul { list-style-type: disc; }
-.prose ol { list-style-type: decimal; }
-.prose li { margin: 0.25em 0; }
-.prose strong { color: var(--june-text-bright); font-weight: 600; }
-.prose pre { border-radius: 8px; }
-.prose .katex { color: var(--june-text); }
-
 /* ===== 超级个体训练师 ===== */
 .coach-shell {
   min-height: 100vh;

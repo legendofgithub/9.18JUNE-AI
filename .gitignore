@@ -66,3 +66,8 @@ backend/test_write.txt
 backend/uploads/
 .vercel
 .zcode/
+
+# ——— 媒体素材（本地保留，不入库）———
+视频素材/
+dsh-desktop.png
+studio-light.png

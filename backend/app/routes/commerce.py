@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from ..core.exceptions import UnauthorizedException
-from ..core.security import verify_auth_token
 from ..core.response import success
 from ..models.schemas import FollowUpRequest
 from ..models.commerce_schemas import (
@@ -37,11 +36,8 @@ class AdoptFollowUpRequest(BaseModel):
 
 
 def _owner(request: Request) -> str:
-    owner_id = getattr(request.state, "owner_id", None)
-    if not owner_id:
-        raise UnauthorizedException("请先登录后再使用训练服务")
-    request.app.state.auth_service.assert_user_active(owner_id)
-    return owner_id
+    # 单用户模式：SingleUserMiddleware 已为所有 /api/* 请求标记本地身份
+    return getattr(request.state, "owner_id", "local")
 
 
 def _sanitize_properties(properties: dict) -> dict:
@@ -58,11 +54,7 @@ def _sanitize_properties(properties: dict) -> dict:
 
 @router.post("/analytics/events")
 async def record_analytics_event(body: AnalyticsEventRequest, request: Request):
-    owner_id = getattr(request.state, "owner_id", "")
-    if not owner_id:
-        token = request.headers.get("Authorization", "")
-        if token.startswith("Bearer "):
-            owner_id = verify_auth_token(token[7:]) or ""
+    owner_id = getattr(request.state, "owner_id", "local")
     request.app.state.commerce_repo.add_analytics_event(
         body.event_name,
         owner_id,

@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 from app.core.config import settings
 from app.core.exceptions import ValidationException
-from app.core.security import TokenAuthMiddleware, make_auth_token
 from app.core.url_security import validate_model_base_url
 from app.models.database import (
     get_request_scoped_session,
@@ -56,46 +55,6 @@ def test_request_scoped_sessions_are_isolated(tmp_path):
 
     with pytest.raises(RuntimeError):
         scoped.query(1)
-
-
-def test_global_model_config_requires_admin_scheme(monkeypatch):
-    from fastapi import FastAPI, Request
-    from fastapi.testclient import TestClient
-
-    from app.core.exceptions import JuneException
-    from app.routes.models import router
-
-    monkeypatch.setattr(settings, "JUNE_API_TOKEN", "a" * 32)
-    app = FastAPI()
-    app.add_middleware(TokenAuthMiddleware)
-    app.include_router(router, prefix="/api")
-
-    @app.exception_handler(JuneException)
-    async def handle_june_exception(request: Request, exc: JuneException):
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(status_code=exc.code, content={"code": exc.code, "message": exc.message})
-
-    @app.get("/api/probe")
-    async def probe(request: Request):
-        return {"scheme": getattr(request.state, "auth_scheme", None)}
-
-    client = TestClient(app)
-
-    assert client.get("/api/probe", headers={
-        "Authorization": f"Bearer {settings.JUNE_API_TOKEN}",
-    }).json()["scheme"] == "admin"
-
-    user_token = make_auth_token("user-id")
-    assert client.get("/api/probe", headers={
-        "Authorization": f"Bearer {user_token}",
-    }).json()["scheme"] == "user"
-
-    app.state.deepseek_service = type("Service", (), {})()
-    response = client.put("/api/config/model", headers={
-        "Authorization": f"Bearer {user_token}",
-    }, json={"name": "glm-5.2"})
-    assert response.status_code == 401
 
 
 def test_permission_modes_change_model_contract_and_artifact_writes():

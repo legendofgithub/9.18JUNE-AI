@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from .core.config import settings
 from .core.exceptions import JuneException
 from .core.observability import ObservabilityMiddleware, RuntimeMetrics
-from .core.security import TokenAuthMiddleware, ensure_byok_key, ensure_token
+from .core.security import SingleUserMiddleware, ensure_byok_key, ensure_token
 from .models.database import (
     RequestSessionMiddleware,
     get_engine,
@@ -34,14 +34,12 @@ from .models.database import (
 from .repositories import SessionRepository
 from .repositories.commerce_repo import CommerceRepository
 from .repositories.harness_repo import HarnessRepository
-from .services.admin_service import AdminService
 from .services.agent_service import AgentService
-from .services.auth_service import AuthService
 from .services.commerce_service import CommerceService
 from .services.mvp_service import MvpService
 from .services.deepseek import DeepSeekService
 from .thread_manager import thread_manager
-from .routes import admin, auth, commerce, harness, models
+from .routes import commerce, harness, models
 
 
 @asynccontextmanager
@@ -77,21 +75,11 @@ async def lifespan(app: FastAPI):
     session_repo = SessionRepository(db_session)
     commerce_repo = CommerceRepository(db_session)
     harness_repo = HarnessRepository(db_session)
-    with request_db_scope(settings.connection_url):
-        if settings.JUNE_ADMIN_PASSWORD:
-            commerce_repo.seed_admin(
-                settings.JUNE_ADMIN_IDENTITY,
-                settings.JUNE_ADMIN_EMAIL,
-                settings.JUNE_ADMIN_PASSWORD,
-                settings.JUNE_ADMIN_DISPLAY_NAME,
-            )
     deepseek_service = DeepSeekService()
     app.state.deepseek_service = deepseek_service
     app.state.db_session = db_session
     app.state.commerce_repo = commerce_repo
-    app.state.auth_service = AuthService(commerce_repo)
     app.state.commerce_service = CommerceService(commerce_repo, deepseek_service)
-    app.state.admin_service = AdminService(commerce_repo, app.state.auth_service)
     app.state.mvp_service = MvpService(commerce_repo, session_repo, deepseek_service, thread_manager)
     app.state.agent_service = AgentService(
         harness_repo,
@@ -147,8 +135,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Token 鉴权（开发模式自动生成 token，生产模式从 .env 读取）
-app.add_middleware(TokenAuthMiddleware)
+# 单用户模式：所有 /api/* 请求归属固定本地身份（无登录）
+app.add_middleware(SingleUserMiddleware)
 app.add_middleware(ObservabilityMiddleware, metrics=app.state.runtime_metrics)
 
 # ── 全局异常处理 ──
@@ -187,10 +175,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ── 注册路由 ──
 
 app.include_router(models.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")
 app.include_router(commerce.router, prefix="/api")
 app.include_router(harness.router, prefix="/api")
-app.include_router(admin.router, prefix="/api")
 
 
 # ── 公开端点 ──

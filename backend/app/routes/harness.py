@@ -25,11 +25,8 @@ router = APIRouter(tags=["harness"])
 
 
 def _owner(request: Request) -> str:
-    owner_id = getattr(request.state, "owner_id", None)
-    if not owner_id:
-        raise UnauthorizedException("请先登录后再使用 Harness 工作区")
-    request.app.state.auth_service.assert_user_active(owner_id)
-    return owner_id
+    # 单用户模式：SingleUserMiddleware 已为所有 /api/* 请求标记本地身份
+    return getattr(request.state, "owner_id", "local")
 
 
 def _actor(request: Request) -> dict:
@@ -41,8 +38,8 @@ def _actor(request: Request) -> dict:
 
 
 def _is_admin(request: Request, owner_id: str) -> bool:
-    user = request.app.state.commerce_repo.get_user_by_id(owner_id)
-    return bool(user and user.is_admin)
+    # 单用户模式：本地使用者即管理员
+    return True
 
 
 @router.get("/harness/projects")

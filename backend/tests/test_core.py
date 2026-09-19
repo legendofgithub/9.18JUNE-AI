@@ -118,29 +118,6 @@ class TestConfig:
         assert len(errors) == 0
 
 
-class TestTokenAuth:
-    """Token 鉴权测试"""
-
-    def test_generate_token_length(self):
-        from app.core.security import generate_token
-        token = generate_token()
-        assert len(token) >= 32
-
-    def test_public_paths_bypass_auth(self):
-        from app.core.security import _is_public_path
-        assert _is_public_path("/health") is True
-        assert _is_public_path("/") is True
-        assert _is_public_path("/docs") is True
-        assert _is_public_path("/assets/logo.png") is True
-        assert _is_public_path("/index.html") is True
-
-    def test_api_paths_require_auth(self):
-        from app.core.security import _is_public_path
-        assert _is_public_path("/api/sessions") is False
-        assert _is_public_path("/api/models") is False
-        assert _is_public_path("/api/status") is False
-
-
 @pytest.fixture
 def temp_db():
     """创建临时数据库的集成测试"""

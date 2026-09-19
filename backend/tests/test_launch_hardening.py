@@ -12,12 +12,6 @@ from app.core.observability import ObservabilityMiddleware, RuntimeMetrics
 from app.core.security import _byok_cipher, decrypt_api_key, encrypt_api_key
 from app.core.url_security import PinnedModelTransport, ValidatedModelEndpoint
 from app.models.database import ALEMBIC_HEAD, init_db
-from app.repositories.commerce_repo import (
-    LEGACY_PASSWORD_ITERATIONS,
-    _pbkdf2,
-    hash_password,
-    verify_password,
-)
 
 
 def test_database_url_takes_priority_and_normalizes_postgres():
@@ -50,18 +44,6 @@ def test_external_database_rejects_automatic_create_all():
         assert "Alembic" in str(exc)
     else:
         raise AssertionError("External database initialization must be explicit")
-
-
-def test_password_hash_uses_600k_iterations_and_accepts_legacy_hash():
-    password = "correct-horse-battery"
-    modern = hash_password(password)
-    assert modern.startswith("pbkdf2_sha256$600000$")
-    assert verify_password(password, modern, "")
-
-    salt = secrets.token_hex(16)
-    legacy = _pbkdf2(password, bytes.fromhex(salt), LEGACY_PASSWORD_ITERATIONS)
-    assert verify_password(password, legacy, salt)
-    assert not verify_password("wrong", legacy, salt)
 
 
 def test_byok_encryption_uses_independent_key_and_reads_legacy_ciphertext(monkeypatch):

@@ -1,10 +1,9 @@
 """
-API Token 鉴权中间件 —— Bearer Token 模式。
+单用户模式的安全设施。
 
-- 首次启动时，若未配置 JUNE_API_TOKEN 则自动生成并写入 .env
-- /health、/、/docs、/openapi.json 等路径免鉴权
-- 生产模式下前端通过 localStorage 存储 token，所有 /api/ 请求携带 Authorization: Bearer <token>
-- SSE 请求因 EventSource 不支持自定义 Header，token 通过 URL 参数 ?token=xxx 传递
+- 产品已去商业化（2026-09-19）：无登录、无多用户，/api/* 一律归属固定本地身份
+- JUNE_API_TOKEN 仅用于保护 /metrics 端点（未配置时自动生成并写入 .env）
+- BYOK 模型密钥仍使用 Fernet 加密落库
 """
 import base64
 import hashlib
@@ -17,83 +16,14 @@ from starlette.responses import JSONResponse
 from .config import settings
 
 
-# 免鉴权路径前缀
-PUBLIC_PATHS = {
-    "/health",
-    "/metrics",
-    "/",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-    "/api/auth/register",
-    "/api/auth/login",
-    "/api/products",
-    "/api/analytics/events",
-    "/api/payments/stripe/webhook",
-}
-
-
-def _is_public_path(path: str) -> bool:
-    """判断路径是否需要跳过鉴权"""
-    # 精确匹配
-    if path in PUBLIC_PATHS:
-        return True
-    # /assets/ 下的静态文件
-    if path.startswith("/assets/"):
-        return True
-    # 前端 SPA 页面（非 /api/ 路径）
-    if not path.startswith("/api/"):
-        return True
-    return False
-
-
 def get_client_ip(request: Request) -> str:
-    """获取客户端真实 IP。
-
-    仅当「直连来源」属于受信反代（JUNE_TRUSTED_PROXIES）时才信任
-    X-Forwarded-For 首值；否则忽略 XFF，使用 TCP 连接的对端 IP。
-    这样可防止客户端伪造 X-Forwarded-For 绕过登录限流/锁定。
-    """
-    host = request.client.host if request.client else ""
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        candidate = forwarded.split(",")[0].strip()
-        if candidate and host in settings.JUNE_TRUSTED_PROXIES:
-            return candidate
-    return host
+    """获取直连对端 IP（单用户模式下仅用于审批操作记录）。"""
+    return request.client.host if request.client else ""
 
 
 def generate_token() -> str:
     """生成 32 字符的随机 hex token"""
     return secrets.token_hex(32)
-
-
-def _auth_signature(payload: str) -> str:
-    secret = settings.JUNE_AUTH_SECRET or settings.JUNE_API_TOKEN or "june-dev-auth-secret"
-    digest = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-
-
-def make_auth_token(owner_id: str, ttl_hours: int | None = None) -> str:
-    expires_at = int(time.time()) + (ttl_hours or settings.JUNE_AUTH_TOKEN_HOURS) * 3600
-    payload = f"v1.{owner_id}.{expires_at}"
-    return f"{payload}.{_auth_signature(payload)}"
-
-
-def verify_auth_token(token: str) -> str | None:
-    """验证用户登录 token，返回 owner_id。"""
-    try:
-        version, owner_id, expires_at, signature = token.split(".", 3)
-        if version != "v1":
-            return None
-        payload = f"{version}.{owner_id}.{expires_at}"
-        if not hmac.compare_digest(signature, _auth_signature(payload)):
-            return None
-        if int(expires_at) < int(time.time()):
-            return None
-        return owner_id
-    except (ValueError, TypeError):
-        return None
 
 
 def _byok_cipher(secret: str | None = None):
@@ -187,59 +117,12 @@ def _persist_token(token: str) -> None:
     _persist_env_value("JUNE_API_TOKEN", token)
 
 
-class TokenAuthMiddleware(BaseHTTPMiddleware):
-    """API Token 鉴权中间件
+class SingleUserMiddleware(BaseHTTPMiddleware):
+    """单用户模式：为所有 /api/* 请求标记固定本地身份。"""
 
-    检查规则：
-    1. 公开路径 → 放行
-    2. Authorization: Bearer <token> → 校验
-    3. URL 参数 ?token=<token> → 校验（SSE 兼容）
-    4. 无 token → 返回 401
-    """
+    LOCAL_OWNER_ID = "local"
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-
-        # CORS preflight never carries credentials; let CORSMiddleware answer it.
-        if request.method == "OPTIONS":
-            return await call_next(request)
-
-        # 公开路径免鉴权
-        if _is_public_path(path):
-            return await call_next(request)
-
-        # ensure_token() 启动时已将 token 写入 settings.JUNE_API_TOKEN。
-        valid_token = settings.JUNE_API_TOKEN
-
-        # 方式一：Authorization Header
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            if token and valid_token and hmac.compare_digest(token, valid_token):
-                request.state.auth_scheme = "admin"
-                return await call_next(request)
-            owner_id = verify_auth_token(token)
-            if token and owner_id:
-                request.state.owner_id = owner_id
-                request.state.auth_scheme = "user"
-                return await call_next(request)
-
-        # 方式二：URL 参数 ?token=（EventSource / SSE 不支持自定义 Header，登录态走 query）
-        query_token = request.query_params.get("token")
-        if query_token:
-            owner_id = verify_auth_token(query_token)
-            if owner_id:
-                request.state.owner_id = owner_id
-                request.state.auth_scheme = "user"
-                return await call_next(request)
-
-        # 鉴权失败
-        return JSONResponse(
-            status_code=401,
-            content={
-                "code": 401,
-                "message": "未授权访问，请提供有效的 API Token",
-                "data": None,
-                "timestamp": int(__import__("time").time() * 1000),
-            },
-        )
+        if request.url.path.startswith("/api/"):
+            request.state.owner_id = self.LOCAL_OWNER_ID
+        return await call_next(request)

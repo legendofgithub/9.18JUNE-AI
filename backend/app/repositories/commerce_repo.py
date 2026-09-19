@@ -1,6 +1,4 @@
-import hashlib
 import json
-import secrets
 import time
 import uuid
 from typing import Optional
@@ -10,9 +8,7 @@ from sqlalchemy.orm import Session
 from ..core.exceptions import JuneException, NotFoundException, ValidationException
 from ..models.database import (
     AnalyticsEventModel,
-    AuditLogModel,
     InstalledSkillModel,
-    LoginThrottleModel,
     MvpRunModel,
     ModelEntryModel,
     ModelServiceModel,
@@ -20,7 +16,6 @@ from ..models.database import (
     RunEventModel,
     RunStepModel,
     SessionModel,
-    UserModel,
 )
 
 
@@ -37,210 +32,9 @@ MVP_STEPS = [
     ("retrospective", "复盘转化、交付和下一轮迭代", "整理转化、交付、收款和改进点，决定下一轮最小实验。", "变现复盘报告"),
 ]
 
-PASSWORD_ITERATIONS = 600_000
-LEGACY_PASSWORD_ITERATIONS = 120_000
-
-
-def _pbkdf2(password: str, salt: bytes, iterations: int) -> str:
-    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations).hex()
-
-
-def hash_password(password: str) -> str:
-    salt = secrets.token_hex(16)
-    digest = _pbkdf2(password, bytes.fromhex(salt), PASSWORD_ITERATIONS)
-    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt}${digest}"
-
-
-def verify_password(password: str, password_hash: str, password_salt: str) -> bool:
-    try:
-        if password_hash.startswith("pbkdf2_sha256$"):
-            _, iterations_text, salt, digest = password_hash.split("$", 3)
-            iterations = int(iterations_text)
-            if iterations < PASSWORD_ITERATIONS:
-                return False
-            return secrets.compare_digest(_pbkdf2(password, bytes.fromhex(salt), iterations), digest)
-        return secrets.compare_digest(
-            _pbkdf2(password, bytes.fromhex(password_salt), LEGACY_PASSWORD_ITERATIONS),
-            password_hash,
-        )
-    except (ValueError, TypeError):
-        return False
-
-
 class CommerceRepository:
     def __init__(self, db: Session):
         self.db = db
-
-    def create_user(
-        self,
-        email: str,
-        password: str,
-        display_name: str,
-        identity: str = "",
-        is_admin: bool = False,
-    ) -> UserModel:
-        normalized_email = email.strip().lower()
-        normalized_identity = identity.strip().lower()
-        if self.find_user_by_email(normalized_email) is not None:
-            raise ValidationException("该邮箱已注册")
-        if normalized_identity and self.find_user_by_identity(normalized_identity) is not None:
-            raise ValidationException("该账号名已注册")
-        password_hash = hash_password(password)
-        user = UserModel(
-            id=str(uuid.uuid4()),
-            email=normalized_email,
-            identity=normalized_identity,
-            display_name=display_name.strip() or normalized_email.split("@")[0],
-            password_hash=password_hash,
-            password_salt="",
-            is_admin=is_admin,
-        )
-        self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
-    def find_user_by_email(self, email: str) -> Optional[UserModel]:
-        return self.db.query(UserModel).filter(UserModel.email == email.strip().lower()).first()
-
-    def find_user_by_identity(self, identity: str) -> Optional[UserModel]:
-        return self.db.query(UserModel).filter(UserModel.identity == identity.strip().lower()).first()
-
-    def get_user_by_id(self, user_id: str) -> Optional[UserModel]:
-        return self.db.get(UserModel, user_id)
-
-    def find_login_user(self, account: str) -> Optional[UserModel]:
-        account = account.strip().lower()
-        if "@" in account:
-            return self.find_user_by_email(account)
-        return self.find_user_by_identity(account)
-
-    def seed_admin(self, identity: str, email: str, password: str, display_name: str) -> UserModel:
-        normalized_identity = identity.strip().lower()
-        user = self.find_user_by_identity(normalized_identity) or self.find_user_by_email(email)
-        password_hash = hash_password(password)
-        if user is None:
-            user = UserModel(
-                id=str(uuid.uuid4()),
-                email=email.strip().lower(),
-                identity=normalized_identity,
-                display_name=display_name.strip() or normalized_identity,
-                password_hash=password_hash,
-                password_salt="",
-                is_admin=True,
-            )
-            self.db.add(user)
-        else:
-            user.email = email.strip().lower()
-            user.identity = normalized_identity
-            user.display_name = display_name.strip() or normalized_identity
-            user.password_hash = password_hash
-            user.password_salt = ""
-            user.is_admin = True
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
-    def verify_user(self, account: str, password: str) -> Optional[UserModel]:
-        user = self.find_login_user(account)
-        if user is None:
-            return None
-        if not verify_password(password, user.password_hash, user.password_salt):
-            return None
-        if not user.password_hash.startswith("pbkdf2_sha256$"):
-            user.password_hash = hash_password(password)
-            user.password_salt = ""
-            self.db.commit()
-        return user
-
-    def list_users(self, search: str = "") -> list[UserModel]:
-        query = self.db.query(UserModel).order_by(UserModel.created_at.desc())
-        keyword = search.strip().lower()
-        if keyword:
-            like = f"%{keyword}%"
-            query = query.filter(
-                UserModel.email.like(like)
-                | UserModel.identity.like(like)
-                | UserModel.display_name.like(like)
-            )
-        return query.all()
-
-    def set_user_disabled(self, user_id: str, disabled: bool, reason: str = "") -> UserModel:
-        user = self.get_user_by_id(user_id)
-        if user is None:
-            raise NotFoundException("用户不存在")
-        if user.is_admin and disabled:
-            raise ValidationException("不能禁用管理员账号")
-        user.is_disabled = disabled
-        user.disabled_at = time.time() if disabled else None
-        user.disabled_reason = reason.strip()[:300] if disabled else ""
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-
-    def get_login_throttle(self, key: str, account: str = "") -> LoginThrottleModel:
-        throttle = self.db.get(LoginThrottleModel, key)
-        if throttle is None:
-            throttle = LoginThrottleModel(key=key, account=account[:255])
-            self.db.add(throttle)
-        throttle.account = account[:255]
-        return throttle
-
-    def reset_login_throttle(self, key: str) -> None:
-        throttle = self.db.get(LoginThrottleModel, key)
-        if throttle is not None:
-            self.db.delete(throttle)
-            self.db.commit()
-
-    def clear_login_throttles(self, account: str) -> int:
-        normalized = account.strip().lower()
-        throttles = self.db.query(LoginThrottleModel).filter(LoginThrottleModel.account == normalized).all()
-        for throttle in throttles:
-            self.db.delete(throttle)
-        self.db.commit()
-        return len(throttles)
-
-    def record_login_failure(self, key: str, max_attempts: int, window_seconds: int, lockout_seconds: int) -> tuple[int, float]:
-        now = time.time()
-        throttle = self.get_login_throttle(key)
-        if throttle.window_started_at == 0 or now - throttle.window_started_at > window_seconds:
-            throttle.failed_count = 0
-            throttle.window_started_at = now
-        throttle.failed_count += 1
-        if throttle.failed_count >= max_attempts:
-            throttle.locked_until = now + lockout_seconds
-            throttle.failed_count = 0
-            throttle.window_started_at = now
-        throttle.updated_at = now
-        self.db.commit()
-        locked_until = throttle.locked_until or 0
-        return throttle.failed_count, locked_until
-
-    def add_audit(
-        self,
-        actor_id: str,
-        actor_account: str,
-        action: str,
-        target_type: str = "",
-        target_id: str = "",
-        ip: str = "",
-        user_agent: str = "",
-        detail: dict | None = None,
-    ) -> None:
-        self.db.add(AuditLogModel(
-            actor_id=actor_id,
-            actor_account=actor_account[:255],
-            action=action[:80],
-            target_type=target_type[:40],
-            target_id=target_id[:120],
-            ip=ip[:64],
-            user_agent=user_agent[:300],
-            detail_json=json.dumps(detail or {}, ensure_ascii=False, separators=(",", ":")),
-        ))
-        self.db.commit()
-
-    def list_audit_logs(self, limit: int = 100) -> list[AuditLogModel]:
-        return self.db.query(AuditLogModel).order_by(AuditLogModel.created_at.desc()).limit(limit).all()
 
     def add_analytics_event(
         self,
@@ -319,13 +113,6 @@ class CommerceRepository:
             .filter(ModelServiceModel.owner_id == owner_id, ModelServiceModel.id == service_id)
             .first()
         )
-
-    def promote_to_admin(self, user: UserModel) -> UserModel:
-        """桌面版首个注册用户提权为本机管理员"""
-        user.is_admin = True
-        self.db.commit()
-        self.db.refresh(user)
-        return user
 
     def new_model_service(self, service_id: str, owner_id: str) -> ModelServiceModel:
         return ModelServiceModel(id=service_id, owner_id=owner_id)

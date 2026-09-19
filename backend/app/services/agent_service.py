@@ -580,17 +580,8 @@ class AgentService:
             self.metrics.inc(name)
 
     def _audit(self, owner_id: str, actor: dict | None, action: str, target_type: str, target_id: str, detail: dict | None = None):
-        user = self.commerce.get_user_by_id(owner_id)
-        self.commerce.add_audit(
-            owner_id,
-            (actor or {}).get("account") or (user.email if user else owner_id),
-            action,
-            target_type,
-            target_id,
-            (actor or {}).get("ip", ""),
-            (actor or {}).get("userAgent", ""),
-            detail,
-        )
+        # 单用户模式：审计日志的唯一读者（管理后台）已随登录系统移除，保留调用点仅为兼容
+        return None
 
     def _project_detail(self, project: HarnessProjectModel) -> dict:
         sessions = self.repo.list_sessions(project)

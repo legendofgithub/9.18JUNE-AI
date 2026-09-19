@@ -11,17 +11,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from app.core.security import TokenAuthMiddleware
+from app.core.security import SingleUserMiddleware
 from app.core.exceptions import JuneException
 from app.models.database import Base
 from app.models.schemas import FollowUpRequest
 from app.repositories.commerce_repo import CommerceRepository
 from app.repositories.session_repo import SessionRepository
-from app.routes.auth import router as auth_router
-from app.routes.admin import router as admin_router
 from app.routes.commerce import router as commerce_router
-from app.services.admin_service import AdminService
-from app.services.auth_service import AuthService
 from app.services.commerce_service import CommerceService
 from app.services.mvp_service import MvpService
 
@@ -72,77 +68,22 @@ def make_client(tmp_path):
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(TokenAuthMiddleware)
+    app.add_middleware(SingleUserMiddleware)
     app.add_exception_handler(JuneException, lambda request, exc: JSONResponse(
         status_code=exc.code,
         content={"code": exc.code, "message": exc.message, "data": exc.data},
     ))
-    app.include_router(auth_router, prefix="/api")
     app.include_router(commerce_router, prefix="/api")
-    app.include_router(admin_router, prefix="/api")
-    app.state.auth_service = AuthService(repo)
     app.state.commerce_repo = repo
     app.state.commerce_service = CommerceService(repo, llm)
-    app.state.admin_service = AdminService(repo, app.state.auth_service)
     app.state.mvp_service = MvpService(repo, SessionRepository(db), llm, None)
     return TestClient(app), db, engine, llm
-
-
-def register_and_login(client, email="buyer@example.com"):
-    response = client.post("/api/auth/register", json={
-        "email": email,
-        "password": "secure-password",
-        "display_name": "Buyer",
-    })
-    assert response.status_code == 200
-    return response.json()["data"]
-
-
-def auth_headers(user):
-    return {"Authorization": f"Bearer {user['token']}"}
-
-
-def test_admin_login_and_free_coach_status(tmp_path):
-    client, db, engine, _ = make_client(tmp_path)
-    try:
-        client.app.state.auth_service.repo.seed_admin(
-            "Tony",
-            "tony@june.local",
-            "q514038832.",
-            "Tony",
-        )
-        login = client.post("/api/auth/login", json={
-            "account": "Tony",
-            "password": "q514038832.",
-        })
-        assert login.status_code == 200
-        admin = login.json()["data"]
-        assert admin["isAdmin"] is True
-        assert admin["account"] == "tony"
-
-        status = client.get("/api/coach/status", headers=auth_headers(admin))
-        assert status.json()["data"] == {
-            "paid": True,
-            "skillInstalled": False,
-            "apiKeyReady": False,
-            "modelName": "",
-            "activeRunId": None,
-        }
-
-        current_skill = client.get("/api/skills/current", headers=auth_headers(admin))
-        assert current_skill.status_code == 200
-        assert current_skill.json()["data"] is None
-    finally:
-        db.close()
-        engine.dispose()
 
 
 def test_model_services_crud_and_concurrent_version(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
-        user = register_and_login(client, "models@example.com")
-        headers = auth_headers(user)
-        listed = client.get("/api/model-services", headers=headers)
+        listed = client.get("/api/model-services")
         assert listed.status_code == 200
         services = listed.json()["data"]
         assert len(services) == 5
@@ -166,14 +107,13 @@ def test_model_services_crud_and_concurrent_version(tmp_path):
                 "reasoning": "medium",
             }],
         }
-        updated = client.put(f"/api/model-services/{deepseek['id']}", headers=headers, json=payload)
+        updated = client.put(f"/api/model-services/{deepseek['id']}", json=payload)
         assert updated.status_code == 200
         assert updated.json()["data"]["apiKeyReady"] is True
         assert updated.json()["data"]["version"] == deepseek["version"] + 1
 
         stale = client.put(
             f"/api/model-services/{deepseek['id']}",
-            headers=headers,
             json={**payload, "display_name": "Stale"},
         )
         assert stale.status_code == 400
@@ -196,12 +136,12 @@ def test_model_services_crud_and_concurrent_version(tmp_path):
                 "reasoning": "high",
             }],
         }
-        created = client.post("/api/model-services", headers=headers, json=custom)
+        created = client.post("/api/model-services", json=custom)
         assert created.status_code == 200
-        conflict = client.post("/api/model-services", headers=headers, json=custom)
+        conflict = client.post("/api/model-services", json=custom)
         assert conflict.status_code == 400
 
-        deleted = client.delete("/api/model-services/private-gateway", headers=headers)
+        deleted = client.delete("/api/model-services/private-gateway")
         assert deleted.status_code == 200
     finally:
         db.close()
@@ -232,8 +172,7 @@ def test_cors_preflight_bypasses_user_token_auth(tmp_path):
 def test_free_user_can_install_without_payment(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
-        user = register_and_login(client)
-        response = client.post("/api/coach/start", headers=auth_headers(user), json={
+        response = client.post("/api/coach/start", json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "api_key": "sk-byok",
@@ -248,13 +187,12 @@ def test_free_user_can_install_without_payment(tmp_path):
 def test_install_failure_returns_sanitized_reason(tmp_path):
     client, db, engine, llm = make_client(tmp_path)
     try:
-        user = register_and_login(client, email="balance@example.com")
         llm.connection_result = {
             "ok": False,
             "error": "AI 工具账户余额不足，请先充值后再连接。",
             "http_status": 402,
         }
-        response = client.post("/api/coach/start", headers=auth_headers(user), json={
+        response = client.post("/api/coach/start", json={
             "model_name": "deepseek-chat",
             "base_url": "https://api.deepseek.com/v1",
             "api_key": "sk-byok",
@@ -270,9 +208,8 @@ def test_install_failure_returns_sanitized_reason(tmp_path):
 def test_install_autorun_and_reuses_skill(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
-        user = register_and_login(client)
 
-        installed = client.post("/api/coach/start", headers=auth_headers(user), json={
+        installed = client.post("/api/coach/start", json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "api_key": "sk-byok",
@@ -283,7 +220,7 @@ def test_install_autorun_and_reuses_skill(tmp_path):
         assert "encrypted_api_key" not in json.dumps(installed_data)
         assert "sk-byok" not in json.dumps(installed_data)
 
-        restarted = client.post("/api/coach/start", headers=auth_headers(user), json={
+        restarted = client.post("/api/coach/start", json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
         })
@@ -293,7 +230,6 @@ def test_install_autorun_and_reuses_skill(tmp_path):
 
         detail = client.get(
             f"/api/mvp-runs/{installed_data['run']['id']}",
-            headers=auth_headers(user),
         )
         assert detail.status_code == 200
         run = detail.json()["data"]
@@ -316,7 +252,6 @@ def test_install_autorun_and_reuses_skill(tmp_path):
 
         report = client.get(
             f"/api/mvp-runs/{run['id']}/report",
-            headers=auth_headers(user),
         ).content.decode("utf-8")
         visible_content = json.dumps(run, ensure_ascii=False) + report
         for forbidden in ["API", "Base URL", "模型调用", "框架", "代码结构", "Prompt", "CORS"]:
@@ -329,18 +264,16 @@ def test_install_autorun_and_reuses_skill(tmp_path):
 def test_completion_locks_first_path_and_second_path_remains_active(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
-        user = register_and_login(client)
-        installed = client.post("/api/coach/start", headers=auth_headers(user), json={
+        installed = client.post("/api/coach/start", json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "api_key": "sk-byok",
         }).json()["data"]
         run_id = installed["run"]["id"]
 
-        detail = client.get(f"/api/mvp-runs/{run_id}", headers=auth_headers(user)).json()["data"]
+        detail = client.get(f"/api/mvp-runs/{run_id}").json()["data"]
         skipped = client.patch(
             f"/api/mvp-runs/{run_id}/steps/{detail['steps'][1]['id']}",
-            headers=auth_headers(user),
             json={"artifact_title": "跳过", "artifact_content": "x" * 30, "completed": True},
         )
         assert skipped.status_code == 400
@@ -349,7 +282,6 @@ def test_completion_locks_first_path_and_second_path_remains_active(tmp_path):
         for step in detail["steps"]:
             response = client.patch(
                 f"/api/mvp-runs/{run_id}/steps/{step['id']}",
-                headers=auth_headers(user),
                 json={
                     "artifact_title": step["requiredArtifact"],
                     "artifact_content": f"{step['title']}的客观交付记录，包含具体动作和结果。",
@@ -358,16 +290,16 @@ def test_completion_locks_first_path_and_second_path_remains_active(tmp_path):
             )
             assert response.status_code == 200
 
-        locked_detail = client.get(f"/api/mvp-runs/{run_id}", headers=auth_headers(user)).json()["data"]
+        locked_detail = client.get(f"/api/mvp-runs/{run_id}").json()["data"]
         assert locked_detail["status"] == "completed"
         assert locked_detail["completedAt"] is not None
 
-        chat = client.post(f"/api/mvp-runs/{run_id}/chat", headers=auth_headers(user), json={
+        chat = client.post(f"/api/mvp-runs/{run_id}/chat", json={
             "message": "我还没完成产品打造，请继续",
         })
         assert chat.status_code == 403
 
-        follow_up = client.post(f"/api/mvp-runs/{run_id}/follow-up", headers=auth_headers(user), json={
+        follow_up = client.post(f"/api/mvp-runs/{run_id}/follow-up", json={
             "session_id": run_id,
             "parent_thread_id": "main",
             "thread_id": "f1",
@@ -385,16 +317,15 @@ def test_completion_locks_first_path_and_second_path_remains_active(tmp_path):
         first_step = locked_detail["steps"][0]
         patch = client.patch(
             f"/api/mvp-runs/{run_id}/steps/{first_step['id']}",
-            headers=auth_headers(user),
             json={"artifact_title": "重写", "artifact_content": "x" * 30, "completed": True},
         )
         assert patch.status_code == 403
 
-        report = client.get(f"/api/mvp-runs/{run_id}/report", headers=auth_headers(user))
+        report = client.get(f"/api/mvp-runs/{run_id}/report")
         assert report.status_code == 200
         assert "全部节点已完成，本路径已锁定" in response_text(report)
 
-        second = client.post("/api/mvp-runs", headers=auth_headers(user), json={
+        second = client.post("/api/mvp-runs", json={
             "title": "第二个 MVP",
             "vertical": "跨境电商",
         })
@@ -408,21 +339,20 @@ def test_completion_locks_first_path_and_second_path_remains_active(tmp_path):
 def test_tracking_metadata_is_hidden_and_updates_project(tmp_path):
     client, db, engine, llm = make_client(tmp_path)
     try:
-        user = register_and_login(client)
-        installed = client.post("/api/coach/start", headers=auth_headers(user), json={
+        installed = client.post("/api/coach/start", json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "api_key": "sk-byok",
         }).json()["data"]
         run_id = installed["run"]["id"]
 
-        chat = client.post(f"/api/mvp-runs/{run_id}/chat", headers=auth_headers(user), json={
+        chat = client.post(f"/api/mvp-runs/{run_id}/chat", json={
             "message": "我想服务本地实体商家",
         })
         assert chat.status_code == 200
         assert "<tracking>" not in chat.text
 
-        detail = client.get(f"/api/mvp-runs/{run_id}", headers=auth_headers(user)).json()["data"]
+        detail = client.get(f"/api/mvp-runs/{run_id}").json()["data"]
         assert detail["blocker"] == "人群还不够窄"
         assert detail["nextAction"] == "先列出10个具体客户"
         assert detail["vertical"] == "本地实体商家"
@@ -438,8 +368,7 @@ def test_tracking_metadata_is_hidden_and_updates_project(tmp_path):
 def test_follow_up_hides_tracking_metadata(tmp_path):
     client, db, engine, _ = make_client(tmp_path)
     try:
-        user = register_and_login(client, "follower@example.com")
-        installed = client.post("/api/coach/start", headers=auth_headers(user), json={
+        installed = client.post("/api/coach/start", json={
             "model_name": "glm-5.2",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "api_key": "sk-byok",
@@ -460,32 +389,12 @@ def test_follow_up_hides_tracking_metadata(tmp_path):
                 },
                 query="什么是垂直人群？",
             )
-            return [item async for item in client.app.state.mvp_service.stream_follow_up(user["id"], run_id, body)]
+            return [item async for item in client.app.state.mvp_service.stream_follow_up("local", run_id, body)]
 
         events = asyncio.run(consume_follow_up())
         assert "<tracking>" not in json.dumps(events)
-        refreshed = client.get(f"/api/mvp-runs/{run_id}", headers=auth_headers(user)).json()["data"]
+        refreshed = client.get(f"/api/mvp-runs/{run_id}").json()["data"]
         assert "<tracking>" not in json.dumps(refreshed["threadMessages"])
-    finally:
-        db.close()
-        engine.dispose()
-
-
-def test_run_ownership_is_enforced(tmp_path):
-    client, db, engine, _ = make_client(tmp_path)
-    try:
-        owner = register_and_login(client, "owner@example.com")
-        intruder = register_and_login(client, "intruder@example.com")
-        installed = client.post("/api/coach/start", headers=auth_headers(owner), json={
-            "model_name": "glm-5.2",
-            "base_url": "https://open.bigmodel.cn/api/paas/v4",
-            "api_key": "sk-owner",
-        }).json()["data"]
-        response = client.get(
-            f"/api/mvp-runs/{installed['run']['id']}",
-            headers=auth_headers(intruder),
-        )
-        assert response.status_code == 404
     finally:
         db.close()
         engine.dispose()

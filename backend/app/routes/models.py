@@ -13,8 +13,8 @@ router = APIRouter()
 
 
 def _require_admin(request: Request) -> None:
-    if getattr(request.state, "auth_scheme", None) != "admin":
-        raise UnauthorizedException("仅管理员可配置全局模型")
+    # 单用户模式：本地使用者即管理员，不再校验 auth_scheme
+    return None
 
 
 class ModelConfigRequest(BaseModel):

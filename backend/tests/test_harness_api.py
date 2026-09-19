@@ -11,17 +11,15 @@ from sqlalchemy.orm import Session
 from sse_starlette.sse import AppStatus
 
 from app.core.exceptions import JuneException
-from app.core.security import TokenAuthMiddleware
+from app.core.security import SingleUserMiddleware
 from app.models.database import Base
 from app.models.database import ToolCallModel
 from app.repositories.commerce_repo import CommerceRepository
 from app.repositories.harness_repo import HarnessRepository
 from app.repositories.session_repo import SessionRepository
-from app.routes.auth import router as auth_router
 from app.routes.commerce import router as commerce_router
 from app.routes.harness import router as harness_router
 from app.services.agent_service import AgentService
-from app.services.auth_service import AuthService
 from app.services.commerce_service import CommerceService
 from app.services.mvp_service import MvpService
 
@@ -73,16 +71,14 @@ def make_client(tmp_path):
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.add_middleware(TokenAuthMiddleware)
+    app.add_middleware(SingleUserMiddleware)
     app.add_exception_handler(JuneException, lambda request, exc: __import__("fastapi").responses.JSONResponse(
         status_code=exc.code,
         content={"code": exc.code, "message": exc.message, "data": exc.data},
     ))
-    app.include_router(auth_router, prefix="/api")
     app.include_router(commerce_router, prefix="/api")
     app.include_router(harness_router, prefix="/api")
     app.state.commerce_repo = commerce
-    app.state.auth_service = AuthService(commerce)
     app.state.commerce_service = CommerceService(commerce, llm)
     app.state.mvp_service = MvpService(commerce, SessionRepository(db), llm, None)
     app.state.agent_service = AgentService(
@@ -95,24 +91,13 @@ def make_client(tmp_path):
     return TestClient(app), db, engine, commerce, harness, llm, tmp_path / "workspace"
 
 
-def register_and_login(client, email="buyer@example.com"):
-    response = client.post("/api/auth/register", json={
-        "email": email,
-        "password": "secure-password",
-        "display_name": "Buyer",
-    })
-    assert response.status_code == 200
-    return response.json()["data"]
-
-
-def auth_headers(user):
-    return {"Authorization": f"Bearer {user['token']}"}
+LOCAL = "local"
 
 
 def activate_paid_user(commerce, user):
-    # 产品免费化后仅保留「安装技能」语义，helper 名保留以减少改动面
+    # 单用户模式下仅保留「安装技能」语义，helper 名保留以减少改动面
     commerce.install_skill(
-        user["id"],
+        LOCAL,
         "fake-model",
         "https://model.example.com/v1",
         True,
@@ -121,8 +106,8 @@ def activate_paid_user(commerce, user):
 
 
 def create_active_run(commerce, user):
-    skill = commerce.find_installed_skill(user["id"])
-    return commerce.create_run(user["id"], skill, "Harness 商业项目", "本地商家")
+    skill = commerce.find_installed_skill(LOCAL)
+    return commerce.create_run(LOCAL, skill, "Harness 商业项目", "本地商家")
 
 
 def parse_sse(text):
@@ -142,23 +127,20 @@ def test_agent_write_requires_approval_then_resumes_and_persists(tmp_path):
     client, db, engine, commerce, harness, llm, workspace = make_client(tmp_path)
     try:
         AppStatus.should_exit_event = asyncio.Event()
-        user = register_and_login(client)
-        activate_paid_user(commerce, user)
-        mvp_run = create_active_run(commerce, user)
-        project = client.post("/api/harness/projects", headers=auth_headers(user), json={
+        activate_paid_user(commerce, {"id": "local"})
+        mvp_run = create_active_run(commerce, {"id": "local"})
+        project = client.post("/api/harness/projects", json={
             "title": "报价项目",
             "mvp_run_id": mvp_run.id,
         }).json()["data"]
         session = project["sessions"][0]
         assert client.patch(
             f"/api/harness/sessions/{session['id']}",
-            headers=auth_headers(user),
             json={"permission": "workspace-write"},
         ).status_code == 200
 
         response = client.post(
             f"/api/harness/sessions/{session['id']}/run",
-            headers=auth_headers(user),
             json={"session_id": session["id"], "message": "生成报价文档", "permission": "workspace-write"},
         )
         assert response.status_code == 200
@@ -173,7 +155,6 @@ def test_agent_write_requires_approval_then_resumes_and_persists(tmp_path):
 
         trace = client.get(
             f"/api/harness/agent-runs/{agent_run_id}",
-            headers=auth_headers(user),
         ).json()["data"]
         call = next(item for item in trace["toolCalls"] if item["id"] == approval_event["approval"]["toolCallId"])
         assert call["status"] == "waiting_approval"
@@ -189,14 +170,13 @@ def test_agent_write_requires_approval_then_resumes_and_persists(tmp_path):
         pending = workspace / "_pending" / project["id"] / f"{call['id']}.pending"
         assert pending.is_file()
 
-        reloaded = client.get("/api/harness/projects", headers=auth_headers(user)).json()["data"]
+        reloaded = client.get("/api/harness/projects").json()["data"]
         restored_run = reloaded[0]["sessions"][0]["agentRun"]
         assert restored_run["status"] == "waiting_approval"
         assert restored_run["toolCalls"][0]["status"] == "waiting_approval"
 
         approved = client.post(
             f"/api/harness/agent-runs/{trace['id']}/approval",
-            headers=auth_headers(user),
             json={"approved": True, "tool_call_id": call["id"]},
         ).json()["data"]
         assert approved["status"] == "waiting_tool"
@@ -208,12 +188,11 @@ def test_agent_write_requires_approval_then_resumes_and_persists(tmp_path):
         resume_client = TestClient(client.app)
         resumed = resume_client.post(
             f"/api/harness/agent-runs/{trace['id']}/resume",
-            headers=auth_headers(user),
         )
         assert resumed.status_code == 200
         assert any(payload.get("type") == "done" for _, payload in parse_sse(resumed.text))
 
-        reloaded = client.get("/api/harness/projects", headers=auth_headers(user)).json()["data"]
+        reloaded = client.get("/api/harness/projects").json()["data"]
         messages = reloaded[0]["sessions"][0]["messages"]
         assert any(message["role"] == "tool" for message in messages)
         assert messages[-1]["content"] == "已生成报价文档，并写入项目沙箱。"
@@ -225,29 +204,26 @@ def test_agent_write_requires_approval_then_resumes_and_persists(tmp_path):
 def test_read_only_rejects_write_and_paths_are_sandboxed(tmp_path):
     client, db, engine, commerce, harness, _, workspace = make_client(tmp_path)
     try:
-        user = register_and_login(client, "readonly@example.com")
-        activate_paid_user(commerce, user)
-        mvp_run = create_active_run(commerce, user)
-        project = client.post("/api/harness/projects", headers=auth_headers(user), json={
+        activate_paid_user(commerce, {"id": "local"})
+        mvp_run = create_active_run(commerce, {"id": "local"})
+        project = client.post("/api/harness/projects", json={
             "title": "只读项目",
             "mvp_run_id": mvp_run.id,
         }).json()["data"]
         session = project["sessions"][0]
         assert client.patch(
             f"/api/harness/sessions/{session['id']}",
-            headers=auth_headers(user),
             json={"permission": "workspace-write"},
         ).status_code == 200
         denied = client.post(
             f"/api/harness/sessions/{session['id']}/files",
-            headers=auth_headers(user),
             json={"files": [{"path": "../escape.txt", "content": "bad"}]},
         )
         assert denied.status_code == 400
         assert "路径" in denied.json()["message"] or "路径" in str(denied.json())
 
         service = client.app.state.agent_service
-        project_model = harness.get_project(user["id"], project["id"])
+        project_model = harness.get_project("local", project["id"])
         try:
             service.tools.safe_file_target(project_model, "../escape.txt")
             raise AssertionError("path traversal was accepted")
@@ -262,7 +238,7 @@ def test_read_only_rejects_write_and_paths_are_sandboxed(tmp_path):
 
         sandbox = workspace / project["id"]
         (sandbox / "keep.txt").write_text("keep", encoding="utf-8")
-        deleted = client.delete(f"/api/harness/projects/{project['id']}", headers=auth_headers(user))
+        deleted = client.delete(f"/api/harness/projects/{project['id']}")
         assert deleted.status_code == 200
         assert not sandbox.exists()
     finally:
@@ -270,37 +246,27 @@ def test_read_only_rejects_write_and_paths_are_sandboxed(tmp_path):
         engine.dispose()
 
 
-def test_context_compression_and_owner_isolation(tmp_path):
+def test_context_compression(tmp_path):
     client, db, engine, commerce, harness, _, __ = make_client(tmp_path)
     try:
-        first = register_and_login(client, "first@example.com")
-        second = register_and_login(client, "second@example.com")
-        activate_paid_user(commerce, first)
-        mvp_run = create_active_run(commerce, first)
-        project = client.post("/api/harness/projects", headers=auth_headers(first), json={
+        activate_paid_user(commerce, {"id": "local"})
+        mvp_run = create_active_run(commerce, {"id": "local"})
+        project = client.post("/api/harness/projects", json={
             "title": "上下文项目",
             "mvp_run_id": mvp_run.id,
         }).json()["data"]
-        session = harness.get_session(first["id"], project["sessions"][0]["id"])
+        session = harness.get_session("local", project["sessions"][0]["id"])
         for index in range(12):
             harness.add_message(session, "user" if index % 2 == 0 else "assistant", f"消息 {index} " + "细节" * 100)
 
         context = client.get(
             f"/api/harness/sessions/{session.id}/context",
-            headers=auth_headers(first),
         ).json()["data"]
         assert context["components"]
         compressed = client.post(
             f"/api/harness/sessions/{session.id}/context/compress",
-            headers=auth_headers(first),
         ).json()["data"]
         assert "早期对话要点" in compressed["summary"]
-
-        isolated = client.get(
-            f"/api/harness/sessions/{session.id}/context",
-            headers=auth_headers(second),
-        )
-        assert isolated.status_code == 404
     finally:
         db.close()
         engine.dispose()
@@ -309,10 +275,9 @@ def test_context_compression_and_owner_isolation(tmp_path):
 def test_free_user_can_create_project_after_install(tmp_path):
     client, db, engine, commerce, _, __, ___ = make_client(tmp_path)
     try:
-        user = register_and_login(client, "free@example.com")
-        activate_paid_user(commerce, user)
-        create_active_run(commerce, user)
-        response = client.post("/api/harness/projects", headers=auth_headers(user), json={"title": "免费用户项目"})
+        activate_paid_user(commerce, {"id": "local"})
+        create_active_run(commerce, {"id": "local"})
+        response = client.post("/api/harness/projects", json={"title": "免费用户项目"})
         assert response.status_code == 200
     finally:
         db.close()

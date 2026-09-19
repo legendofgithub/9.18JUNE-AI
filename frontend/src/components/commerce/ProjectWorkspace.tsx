@@ -31,7 +31,6 @@ const RIGHT_TAB_LABELS: Record<RightTab, string> = { guide: '引导', context: '
 
 export default function ProjectWorkspace({ language }: { language: SiteLanguage }) {
   const currentRun = useCommerceStore(s => s.currentRun);
-  const user = useCommerceStore(s => s.user);
   const patchStep = useCommerceStore(s => s.patchStep);
 
   const harness = useHarnessStore();
@@ -60,9 +59,10 @@ export default function ProjectWorkspace({ language }: { language: SiteLanguage 
   const activeMessages = activeSession?.messages || [];
 
   useEffect(() => {
-    if (user?.id) void harness.bootstrap(user.id);
+    // 单用户模式：固定本地身份
+    void harness.bootstrap('local');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     const sync = () => {

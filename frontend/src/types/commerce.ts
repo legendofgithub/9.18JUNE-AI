@@ -45,46 +45,6 @@ export const AI_TOOL_OPTIONS = [
 ];
 
 // ===== Vibe Coding 超级个体训练师商业类型 =====
-export interface CommerceUser {
-  id: string;
-  email: string;
-  account: string;
-  displayName: string;
-  isAdmin: boolean;
-  token: string;
-}
-
-export interface AdminOverview {
-  totalUsers: number;
-  disabledUsers: number;
-  activeRuns: number;
-  analyticsEvents: number;
-}
-
-export interface AdminUser {
-  id: string;
-  email: string;
-  account: string;
-  displayName: string;
-  isAdmin: boolean;
-  isDisabled: boolean;
-  disabledReason: string;
-  createdAt: number;
-}
-
-export interface AdminAuditLog {
-  id: string;
-  actorId: string;
-  actorAccount: string;
-  action: string;
-  targetType: string;
-  targetId: string;
-  ip: string;
-  userAgent: string;
-  detail: Record<string, unknown>;
-  createdAt: number;
-}
-
 export interface CoachStatus {
   paid: boolean;
   skillInstalled: boolean;

@@ -1,106 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
-import { Globe, LayoutDashboard, LogIn, LogOut, Route, ShieldCheck, UserRound } from 'lucide-react';
-import useCommerceStore from '../../stores/useCommerceStore';
+import { Globe, Route } from 'lucide-react';
 
 export type SiteLanguage = 'zh' | 'en';
-export type SiteRoute = 'home' | 'studio' | 'admin';
 
 interface SiteHeaderProps {
   language: SiteLanguage;
   onLanguageChange: (language: SiteLanguage) => void;
-  route: SiteRoute;
+  route?: 'studio';
 }
 
-const copy = {
-  zh: {
-    products: '产品介绍',
-    about: '关于我们',
-    studio: '模型服务',
-    promo: 'OPC 宣传页',
-    home: '产品首页',
-    login: '登录',
-    logout: '退出',
-    account: '账号',
-    password: '密码',
-    encrypted: '已加密保存',
-    email: '邮箱',
-    admin: '管理员',
-    adminConsole: '管理后台',
-  },
-  en: {
-    products: 'Products',
-    about: 'About Us',
-    studio: 'Model Studio',
-    promo: 'OPC Promo',
-    home: 'Product Home',
-    login: 'Sign in',
-    logout: 'Sign out',
-    account: 'Account',
-    password: 'Password',
-    encrypted: 'Encrypted',
-    email: 'Email',
-    admin: 'Admin',
-    adminConsole: 'Admin console',
-  },
-};
-
-export default function SiteHeader({ language, onLanguageChange, route }: SiteHeaderProps) {
-  const user = useCommerceStore(s => s.user);
-  const logout = useCommerceStore(s => s.logout);
-  const text = copy[language];
-  const [accountOpen, setAccountOpen] = useState(false);
-  const closeTimer = useRef<number | null>(null);
-
-  useEffect(() => () => {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-  }, []);
-
-  const openAccount = () => {
-    if (closeTimer.current) {
-      window.clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-    setAccountOpen(true);
-  };
-
-  const scheduleAccountClose = () => {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setAccountOpen(false), 180);
-  };
-
+/** 单用户模式顶栏：仅品牌与语言切换，无登录、无导航、无账户 */
+export default function SiteHeader({ language, onLanguageChange }: SiteHeaderProps) {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <a className="site-brand" href="#/">
+        <a className="site-brand" href="#/studio">
           <span className="site-logo">
             <Route size={17} />
           </span>
           <span>
             <span className="site-brand-name">June AI</span>
             <span className="site-brand-caption">
-              {language === 'zh' ? '超级个体训练师' : 'Super-Solo Coach'}
+              {language === 'zh' ? '超级个体训练师 · 无限追问' : 'Super-Solo Coach · Unlimited Follow-ups'}
             </span>
           </span>
         </a>
-
-        <nav className="site-nav" aria-label={language === 'zh' ? '主导航' : 'Main navigation'}>
-          {route === 'product' ? (
-            <>
-              <a href="#/">{text.home}</a>
-              <span className="site-nav-current">{text.promo}</span>
-            </>
-          ) : route === 'home' ? (
-            <>
-              <a href="#product-intro">{text.products}</a>
-              <a href="#about">{text.about}</a>
-            </>
-          ) : (
-            <>
-              <a href="#/">{text.home}</a>
-              <span className="site-nav-current">{route === 'admin' ? text.adminConsole : text.studio}</span>
-            </>
-          )}
-        </nav>
 
         <div className="site-header-actions">
           <button
@@ -112,58 +35,6 @@ export default function SiteHeader({ language, onLanguageChange, route }: SiteHe
             <Globe size={14} />
             {language === 'zh' ? 'EN' : '中文'}
           </button>
-
-          {user ? (
-            <div
-              className={accountOpen ? 'site-account is-open' : 'site-account'}
-              onMouseEnter={openAccount}
-              onMouseLeave={scheduleAccountClose}
-            >
-              <button type="button" className="site-avatar-button" title={user.displayName || user.account}>
-                {user.displayName?.slice(0, 1).toUpperCase() || <UserRound size={16} />}
-              </button>
-              <div className="site-account-popover">
-                <div className="site-account-header">
-                  <strong>{user.displayName || user.account}</strong>
-                  {user.isAdmin && (
-                    <span className="site-admin-chip">
-                      <ShieldCheck size={12} />
-                      {text.admin}
-                    </span>
-                  )}
-                </div>
-                <dl>
-                  <div>
-                    <dt>{text.account}</dt>
-                    <dd>{user.account}</dd>
-                  </div>
-                  <div>
-                    <dt>{text.email}</dt>
-                    <dd>{user.email}</dd>
-                  </div>
-                  <div>
-                    <dt>{text.password}</dt>
-                    <dd>•••••••• · {text.encrypted}</dd>
-                  </div>
-                </dl>
-                {user.isAdmin && (
-                  <a className="site-admin-console-link" href="#/admin">
-                    <LayoutDashboard size={13} />
-                    {text.adminConsole}
-                  </a>
-                )}
-                <button type="button" className="site-popover-logout" onClick={logout}>
-                  <LogOut size={13} />
-                  {text.logout}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <a className="site-login-link" href="#auth">
-              <LogIn size={14} />
-              {text.login}
-            </a>
-          )}
         </div>
       </div>
     </header>

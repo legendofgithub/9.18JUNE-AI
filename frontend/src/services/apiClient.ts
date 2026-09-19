@@ -1,12 +1,7 @@
 import { API_BASE } from '../config';
 
-export const USER_TOKEN_KEY = 'june_user_token';
-
 export function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem(USER_TOKEN_KEY);
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
+  return { 'Content-Type': 'application/json' };
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

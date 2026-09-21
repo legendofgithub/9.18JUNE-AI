@@ -95,14 +95,6 @@ class Settings(BaseSettings):
     # 默认仅本机（Nginx 反代）。公网部署请把反代 IP 加入这里，否则客户端可伪造 XFF 绕过登录锁定。
     JUNE_TRUSTED_PROXIES: list[str] = ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
 
-    # ---- 支付 ----
-    # sandbox 用于本机联调；production 必须接入签名回调，避免客户端伪造支付
-    JUNE_PAYMENT_PROVIDER: str = "sandbox"
-    JUNE_PAYMENT_CALLBACK_SECRET: str = ""
-    JUNE_PUBLIC_BASE_URL: str = ""
-    JUNE_STRIPE_SECRET_KEY: str = ""
-    JUNE_STRIPE_WEBHOOK_SECRET: str = ""
-
     # ---- 观测 ----
     JUNE_LOG_PATH: str = ""
     JUNE_METRICS_TOKEN: str = ""  # /metrics Bearer/query token；生产必填
@@ -193,15 +185,6 @@ class Settings(BaseSettings):
                 errors.append("JUNE_BYOK_KEY 未设置或长度不足（至少 32 字符）")
             if not self.JUNE_METRICS_TOKEN or len(self.JUNE_METRICS_TOKEN) < 16:
                 errors.append("JUNE_METRICS_TOKEN 未设置或长度不足（至少 16 字符）")
-            if self.JUNE_PAYMENT_PROVIDER == "sandbox":
-                errors.append("生产模式不能使用 sandbox 支付，请配置正式支付通道")
-            if self.JUNE_PAYMENT_PROVIDER == "stripe":
-                if not self.JUNE_PUBLIC_BASE_URL.startswith("https://"):
-                    errors.append("JUNE_PUBLIC_BASE_URL 必须是 HTTPS 地址")
-                if not self.JUNE_STRIPE_SECRET_KEY:
-                    errors.append("JUNE_STRIPE_SECRET_KEY 未设置，无法创建 Stripe 支付")
-                if not self.JUNE_STRIPE_WEBHOOK_SECRET:
-                    errors.append("JUNE_STRIPE_WEBHOOK_SECRET 未设置，无法验证支付回调")
             if not self.JUNE_API_TOKEN or len(self.JUNE_API_TOKEN) < 16:
                 errors.append("JUNE_API_TOKEN 未设置或长度不足（至少 16 字符），生产模式必须提供安全 Token")
         return errors

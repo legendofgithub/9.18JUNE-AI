@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="June AI API",
-    description="Vibe Coding 变现训练官：用自然语言做最小商业 MVP",
+    description="June AI：无限追问的 AI 辅助伴学系统",
     version="2.0.0",
     lifespan=lifespan,
 )

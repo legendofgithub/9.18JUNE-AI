@@ -244,7 +244,7 @@ class CommerceService:
     def create_run(self, owner_id: str, title: str, vertical: str) -> dict:
         skill = self.repo.find_installed_skill(owner_id)
         if skill is None:
-            raise ValidationException("请先连接 AI 工具并启动训练官")
+            raise ValidationException("请先连接 AI 工具并启动 AI 伴学助手")
         run = self.repo.create_run(owner_id, skill, title, vertical)
         return self._run_summary(run)
 
@@ -253,7 +253,7 @@ class CommerceService:
         return {
             "id": skill.id,
             "skillKey": skill.skill_key,
-            "name": "Vibe Coding 变现训练官",
+            "name": "June AI 伴学助手",
             "version": skill.version,
             "modelName": skill.model_name,
             "baseUrl": skill.base_url,

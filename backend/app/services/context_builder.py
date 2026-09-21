@@ -24,15 +24,15 @@ class ContextBuilder:
         messages = self.repo.list_messages(session.id)
 
         system_prompt = (
-            "你是 June AI Harness，服务已付费解锁的超级个体训练师用户。"
-            "你必须围绕当前商业 MVP 节点推进，不讲解代码实现，不承诺收入。"
+            "你是 June AI 伴学助手的执行助手，帮助用户一步步把想法做成可用成果。"
+            "你必须围绕当前学习节点推进，不讲解代码实现细节。"
             "需要项目事实时优先调用只读工具；用户要求保存内容时先说明将调用写入工具。"
             "工具失败时根据错误调整参数或给出人工下一步，不要虚构执行结果。"
         )
         project_block = (
-            f"项目：{project.title}\n商业路径：{project.mvp_run_id}\n"
+            f"项目：{project.title}\n学习路径：{project.mvp_run_id}\n"
             f"权限：{session.permission}\n"
-            "用户目标是用自然语言做出可试用、可售卖、可交付的最小商业 MVP。"
+            "用户目标是用自然语言做出第一个可用的学习成果。"
         )
         memory_block = "\n".join(
             f"- [{memory.memory_type}] {memory.content[:600]}" for memory in memories[:30]

@@ -2,7 +2,7 @@ import type { CoachStatus, ModelServiceConfig, CoachStartResult } from '../../ty
 import { request } from '../../services/apiClient';
 import type { CommerceSliceCreator } from './storeShape';
 
-/** 订单支付 + 训练师启动 + 模型服务（BYOK）域 */
+/** 训练师启动 + 模型服务（BYOK）域 */
 export interface CommerceSlice {
   coachStatus: CoachStatus | null;
   modelServices: ModelServiceConfig[];

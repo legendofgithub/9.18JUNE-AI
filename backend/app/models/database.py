@@ -239,7 +239,7 @@ class ToolCallModel(Base):
 
 
 class UserModel(Base):
-    """购买与学习路径归属的账号"""
+    """数据归属账号（单用户模式下固定为 local）"""
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=gen_id)
@@ -297,7 +297,7 @@ class AnalyticsEventModel(Base):
 
 
 class ProductModel(Base):
-    """一次性付费 SKU"""
+    """历史遗留的商品表（免费化后不再使用）"""
     __tablename__ = "products"
 
     id = Column(String(50), primary_key=True)
@@ -310,7 +310,7 @@ class ProductModel(Base):
 
 
 class OrderModel(Base):
-    """在线支付订单"""
+    """历史遗留的订单表（免费化后不再使用）"""
     __tablename__ = "orders"
 
     id = Column(String(36), primary_key=True, default=gen_id)
@@ -342,7 +342,7 @@ class EntitlementModel(Base):
 
 
 class InstalledSkillModel(Base):
-    """已安装的超级个体训练官版本"""
+    """已安装的伴学助手技能版本"""
     __tablename__ = "installed_skills"
 
     id = Column(String(36), primary_key=True, default=gen_id)
@@ -479,7 +479,7 @@ class RunArtifactModel(Base):
 
 
 class RunEventModel(Base):
-    """训练官跟踪日志"""
+    """学习推进跟踪日志"""
     __tablename__ = "run_events"
 
     id = Column(String(36), primary_key=True, default=gen_id)

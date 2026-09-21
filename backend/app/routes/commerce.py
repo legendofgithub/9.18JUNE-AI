@@ -78,7 +78,7 @@ async def start_coach(body: CoachStartRequest, request: Request):
         body.base_url,
         body.api_key,
     )
-    return success(result, "超级个体训练师人格已启动")
+    return success(result, "AI 伴学助手已就绪")
 
 
 @router.get("/skills/current")
@@ -131,7 +131,7 @@ async def install_skill(body: SkillInstallRequest, request: Request):
         body.base_url,
         body.api_key,
     )
-    return success(result, "Vibe Coding 变现训练官已启动")
+    return success(result, "AI 伴学助手已就绪")
 
 
 @router.get("/mvp-runs")

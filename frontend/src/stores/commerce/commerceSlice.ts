@@ -42,7 +42,7 @@ export const createCommerceSlice: CommerceSliceCreator<CommerceSlice> = (set, ge
       await get().loadWorkspace();
       return true;
     } catch (error: any) {
-      set({ error: error?.message || '启动超级个体训练师失败，请检查访问密钥' });
+      set({ error: error?.message || '连接失败，请检查访问密钥' });
       return false;
     } finally {
       set({ isBusy: false });

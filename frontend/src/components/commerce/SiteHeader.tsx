@@ -20,7 +20,7 @@ export default function SiteHeader({ language, onLanguageChange }: SiteHeaderPro
           <span>
             <span className="site-brand-name">June AI</span>
             <span className="site-brand-caption">
-              {language === 'zh' ? '超级个体训练师 · 无限追问' : 'Super-Solo Coach · Unlimited Follow-ups'}
+              {language === 'zh' ? 'AI 伴学助手 · 无限追问' : 'AI Study Companion · Unlimited Follow-ups'}
             </span>
           </span>
         </a>

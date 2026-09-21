@@ -1,22 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, KeyRound, Loader2, Lock, ShieldCheck } from 'lucide-react';
+import { Bot, KeyRound, Loader2 } from 'lucide-react';
 import useCommerceStore from '../../stores/useCommerceStore';
 import { AI_TOOL_OPTIONS, MODEL_BASE_URLS } from '../../types';
 import type { SiteLanguage } from './SiteHeader';
 
 const copy = {
   zh: {
-    title: '超级个体训练师',
-    subtitle: '自动装载超级个体训练师 skill，启动 AI 跟踪交付流程。',
-    paid: '已解锁',
-    unpaid: '未解锁',
-    installed: '训练师已装载',
-    notInstalled: '待装载',
+    title: 'AI 伴学助手',
+    subtitle: '连接你的 AI 工具，开始对话，支持无限追问。',
+    installed: 'AI 伴学助手已就绪',
+    notInstalled: '待启动',
     keyReady: '密钥已保存',
     keyMissing: '待填写密钥',
-    start: '启动超级个体训练师',
-    buyStart: '购买后启动',
-    buy: '返回首页购买',
+    start: '连接并开始对话',
     tool: 'AI 工具',
     apiKey: '访问密钥',
     settings: '模型连接设置',
@@ -25,17 +21,13 @@ const copy = {
     focusHint: '请先填写访问密钥。',
   },
   en: {
-    title: 'Super-Solo Coach',
-    subtitle: 'Automatically load the coach skill and start AI-tracked delivery.',
-    paid: 'Unlocked',
-    unpaid: 'Locked',
-    installed: 'Coach loaded',
-    notInstalled: 'Not loaded',
+    title: 'AI Study Companion',
+    subtitle: 'Connect your AI tool and start chatting — unlimited follow-ups included.',
+    installed: 'Companion ready',
+    notInstalled: 'Not ready',
     keyReady: 'Key saved',
     keyMissing: 'Key required',
-    start: 'Start Super-Solo Coach',
-    buyStart: 'Buy to start',
-    buy: 'Buy on home page',
+    start: 'Connect and start',
     tool: 'AI tool',
     apiKey: 'API key',
     settings: 'Model connection settings',
@@ -93,10 +85,6 @@ export default function CoachLaunchPanel({ language }: { language: SiteLanguage 
       </div>
 
       <div className="studio-status-row">
-        <span className={status?.paid ? 'studio-status-chip is-on' : 'studio-status-chip'}>
-          {status?.paid ? <ShieldCheck size={13} /> : <Lock size={13} />}
-          {status?.paid ? text.paid : text.unpaid}
-        </span>
         <span className={status?.skillInstalled ? 'studio-status-chip is-on' : 'studio-status-chip'}>
           <Bot size={13} />
           {status?.skillInstalled ? text.installed : text.notInstalled}
@@ -145,9 +133,8 @@ export default function CoachLaunchPanel({ language }: { language: SiteLanguage 
         onClick={() => void handleStart()}
       >
         {isBusy ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
-        {status?.paid ? text.start : text.buyStart}
+        {text.start}
       </button>
-      {!status?.paid && <a className="studio-buy-link" href="#/">{text.buy}</a>}
       {(localHint || error) && <p className="studio-launch-error">{localHint || error}</p>}
     </section>
   );

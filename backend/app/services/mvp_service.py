@@ -14,54 +14,54 @@ from ..repositories.session_repo import SessionRepository
 
 STEP_TOOLS = {
     "buyer_pain": {
-        "tool": "付费人群筛选器",
-        "instructions": "列出 3 个你能触达的人群，按痛点强度、付费能力和接触难度打分，选择一个主人群。",
-        "template": "目标人群：\n使用场景：\n急迫痛点：\n现有替代方案：\n触达渠道：\n选择理由：",
+        "tool": "问题与目标梳理器",
+        "instructions": "列出 3 个你想解决的问题，按急迫程度、可实现性和你的兴趣打分，选择一个主问题。",
+        "template": "想解决的问题：\n使用场景：\n急迫程度：\n现有解决办法：\n涉及的人：\n选择理由：",
     },
     "sellable_result": {
-        "tool": "可售卖结果画布",
-        "instructions": "把结果写成一个可验收句子：谁、在什么场景、得到什么改变、如何确认完成。",
-        "template": "产品名称：\n目标客户：\n售卖结果：\n不包含：\n验收标准：\n交付周期：",
+        "tool": "最小成果画布",
+        "instructions": "把成果写成一个可验收句子：谁、在什么场景、得到什么改变、如何确认完成。",
+        "template": "成果名称：\n给谁用：\n成果内容：\n不包含：\n验收标准：\n完成周期：",
     },
     "vibe_brief": {
-        "tool": "Vibe 商业需求简报",
-        "instructions": "用自然语言写清给谁解决什么问题、用户点开后看到什么、下一步做什么、怎么收款。",
-        "template": "目标人群：\n要解决的问题：\n用户看到的页面：\n用户点击或填写的按钮与表单：\n用户得到的结果：\n收款与交付方式：",
+        "tool": "成果需求简报",
+        "instructions": "用自然语言写清给谁解决什么问题、打开后看到什么、下一步做什么、怎么算完成。",
+        "template": "要解决的问题：\n给谁用：\n打开后看到的页面：\n点击或填写的按钮与表单：\n得到的结果：\n完成与验收方式：",
     },
     "product_shape": {
-        "tool": "最小产品形态选择器",
-        "instructions": "在单页工具、表单服务、模板或流程产品中选择一个，并说明客户如何使用和验收。",
-        "template": "产品形态：\n客户使用步骤：\n必须有的页面和按钮：\n必须有的表单或上传：\n结果如何复制、下载或交付：\n选择理由：",
+        "tool": "最简形态选择器",
+        "instructions": "在单页工具、表单、模板或流程工具中选择一个，并说明怎么使用和怎么验收。",
+        "template": "成果形态：\n使用步骤：\n必须有的页面和按钮：\n必须有的表单或上传：\n结果如何保存、下载或分享：\n选择理由：",
     },
     "first_build": {
-        "tool": "第一版 MVP 指令生成器",
-        "instructions": "把商业目标转成一段自然语言指令，让 AI 产出一个可试用的第一版，并记录试用入口。",
-        "template": "商业目标：\n给 AI 的完整指令：\n用户打开后看到什么：\n用户下一步做什么：\n试用链接或交付方式：\n验收记录：",
+        "tool": "第一版成果描述生成器",
+        "instructions": "把想达成的目标转成一段自然语言描述，让 AI 产出一个可试用的第一版，并记录试用入口。",
+        "template": "想达成的目标：\n给 AI 的完整描述：\n打开后看到什么：\n下一步做什么：\n试用链接或保存方式：\n验收记录：",
     },
     "five_minute_iteration": {
         "tool": "5 分钟迭代清单",
-        "instructions": "每轮只改一个影响试用或购买的问题，记录改前、改后和客户能否走通。",
-        "template": "本轮问题：\n用户期望看到的效果：\n给 AI 的修改指令：\n修改后结果：\n可试用判断：\n下一轮问题：",
+        "instructions": "每轮只改一个影响使用的问题，记录改前、改后和能否完整走通。",
+        "template": "本轮问题：\n期望看到的效果：\n给 AI 的修改描述：\n修改后结果：\n可用性判断：\n下一轮问题：",
     },
     "price_payment": {
-        "tool": "报价与收款设计器",
-        "instructions": "确定基础报价、交付范围、收款方式和客户确认标准，避免无限改稿。",
-        "template": "基础报价：\n交付范围：\n不包含：\n收款方式：\n交付说明：\n客户确认标准：",
+        "tool": "方法与练习整理器",
+        "instructions": "整理使用方法、练习步骤、注意事项和完成标准，让这套成果可以反复使用和分享。",
+        "template": "使用方法：\n练习步骤：\n不包含：\n注意事项：\n使用说明：\n完成标准：",
     },
     "growth_assets": {
-        "tool": "获客素材生成器",
-        "instructions": "写一条针对痛点的获客内容、一段产品介绍，并列出首批 20 个潜在客户来源。",
-        "template": "获客内容：\n产品介绍：\n目标人群：\n痛点钩子：\n行动指令：\n首批 20 个潜在客户：",
+        "tool": "分享材料生成器",
+        "instructions": "写一条介绍成果的分享内容、一段成果说明，并列出首批 20 个可以邀请试用的伙伴。",
+        "template": "分享内容：\n成果介绍：\n适合谁：\n亮点：\n邀请方式：\n首批 20 个试用伙伴：",
     },
     "first_sale_delivery": {
-        "tool": "首次销售与交付记录",
-        "instructions": "记录真实销售沟通、收款、一次最小交付和客户验收，不虚构没有发生的结果。",
-        "template": "销售对象：\n沟通渠道：\n报价与收款：\n交付内容：\n客户验收：\n客户反馈：",
+        "tool": "首次完整使用与反馈记录",
+        "instructions": "记录真实的完整使用过程、一次最小交付和使用反馈，不虚构没有发生的结果。",
+        "template": "使用者：\n使用方式：\n交付内容：\n使用过程：\n完成确认：\n使用反馈：",
     },
     "retrospective": {
-        "tool": "变现复盘报告",
-        "instructions": "复盘人群、转化、交付、收款和复购可能性，形成下一轮最小实验。",
-        "template": "有效动作：\n无效动作：\n收入与成本：\n可复用交付物：\n客户反馈：\n下一轮实验：",
+        "tool": "学习复盘报告",
+        "instructions": "复盘方法、使用情况、反馈和改进点，形成下一轮小练习。",
+        "template": "有效方法：\n无效尝试：\n时间与收获：\n可复用成果：\n使用反馈：\n下一步练习：",
     },
 }
 
@@ -321,10 +321,10 @@ class MvpService:
         completed = [step for step in run.steps if step.is_completed]
         remaining = [step for step in run.steps if not step.is_completed]
         lines = [
-            "# Vibe Coding 变现训练官 · 商业 MVP 推进报告",
+            "# AI 伴学助手 · 学习推进报告",
             "",
-            f"- 项目：{run.title}",
-            f"- 目标人群：{run.vertical or '待明确'}",
+            f"- 主题：{run.title}",
+            f"- 学习方向：{run.vertical or '待明确'}",
             f"- 状态：{'已完成并归档' if run.status == 'completed' else '进行中'}",
             f"- 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "",
@@ -381,7 +381,7 @@ class MvpService:
     def _require_skill(self, owner_id: str):
         skill = self.repo.find_installed_skill(owner_id)
         if skill is None:
-            raise ValidationException("请先连接 AI 工具并启动训练官")
+            raise ValidationException("请先连接 AI 工具，再开始学习")
         return skill
 
     def _get_owned_run(self, owner_id: str, run_id: str) -> MvpRunModel:
@@ -389,7 +389,7 @@ class MvpService:
 
     def _reject_completed(self, run: MvpRunModel) -> None:
         if run.status == "completed":
-            raise JuneException("该 MVP 路径已完成并归档，不能重新启用或继续提问", code=403)
+            raise JuneException("该学习路径已完成并归档，不能重新启用或继续提问", code=403)
 
     def _current_step(self, run: MvpRunModel) -> RunStepModel:
         return next((step for step in run.steps if not step.is_completed), run.steps[-1])
@@ -401,12 +401,10 @@ class MvpService:
             run.id,
             "assistant",
             (
-                "Vibe Coding 变现训练官已初始化。请回答 5 个问题，我会帮你推进到第一个可售卖 MVP：\n\n"
-                "1. 你想服务谁？\n"
-                "2. 他们愿意为哪件具体小事花钱？\n"
-                "3. 你希望用户点开后看到什么？\n"
-                "4. 你希望用户下一步做什么？\n"
-                "5. 你准备怎么收款？"
+                "你好，我是你的 AI 伴学助手。我会陪你把想解决的问题一步步做成拿得出手的成果，边学边做。\n\n"
+                "过程中有任何疑问，随时追问：追问的层级和次数都不限，我会一层层陪你把问题聊透，"
+                "聊出来的结论还可以采纳为交付物草稿。\n\n"
+                "今天想学点什么，或者做出什么？可以从你最近想解决的问题说起。"
             ),
             thread_id="main",
         )
@@ -421,17 +419,19 @@ class MvpService:
     ) -> list[dict]:
         tool = STEP_TOOLS[step.step_key]
         system = (
-            "你是「Vibe Coding 变现训练官」，服务对象是不学技术的零基础商业者。你的任务不是泛聊，而是用自然语言引导 AI，"
-            "把用户推进到一个可试用、可售卖、可交付、可复盘的最小商业 MVP。每次回答必须推进当前节点，语言直接、可执行、不承诺收入。"
+            "你是「AI 伴学助手」，陪伴零基础用户学习和构建。你的任务不是泛聊，而是用自然语言引导用户，"
+            "一步一步把当前目标推进成可检验的小成果。每次回答都要推进当前目标，语言直接、可执行；"
+            "遇到较大的问题时，先拆成小步，再陪用户逐个完成。鼓励用户随时追问，追问层级和次数不限。"
             "用户不需要理解实现原理，也不需要查看或修改实现细节；遇到问题时，把它转译成用户想要的效果和下一步动作。"
-            "允许使用页面、按钮、表单、上传、生成结果、复制、下载、链接、收款等应用概念。"
+            "允许使用页面、按钮、表单、上传、生成结果、复制、下载、链接等应用概念。"
             "禁止主动讲解编程语言、实现框架、数据存储、接口、部署架构或实现结构。"
             "回答末尾必须输出 <tracking>{json}</tracking>，json 字段为 blocker、next_action、vertical、artifacts。"
             "artifacts 是数组，每项包含 step_key、title、content；只能记录用户确认或本轮明确生成的交付物草稿。"
+            "不改变客观完成状态。"
         )
         system += "\n\n" + self._permission_policy(permission)
         context = (
-            f"项目：{run.title}\n目标人群：{run.vertical or '待明确'}\n"
+            f"主题：{run.title}\n学习方向：{run.vertical or '待明确'}\n"
             f"当前节点：{step.step_order}/{len(run.steps)} {step.title}\n"
             f"节点目标：{step.objective}\n当前工具：{tool['tool']}\n"
             f"阻塞点：{run.blocker or '无'}\n下一动作：{run.next_action or '无'}\n\n"
@@ -457,7 +457,7 @@ class MvpService:
                 "但不得声称已经修改文件、执行命令或代替用户完成写入。交付物只能作为建议草稿说明。"
             ),
             "workspace-write": (
-                "当前权限为 workspace-write：你可以生成当前商业流程内的交付物草稿，并由系统保存为节点草稿；"
+                "当前权限为 workspace-write：你可以生成当前学习流程内的交付物草稿，并由系统保存为节点草稿；"
                 "不要声称已修改流程外的文件或执行系统命令。"
             ),
             "full-access": (
@@ -488,9 +488,9 @@ class MvpService:
             {
                 "role": "system",
                 "content": (
-                    "你是 Vibe Coding 变现训练官的追问助手。只解释当前商业动作、用户反馈、可用性、售价、获客和交付，"
+                    "你是 AI 伴学助手的追问助手。只解释当前学习动作、使用反馈、可用性、成果整理和分享，"
                     "以及如何用自然语言向 AI 描述期望效果。遇到实现类问题，转成用户想看到什么、点什么、得到什么。"
-                    "不做技术扫盲，不讲解实现原理，把泛聊拉回项目推进，不承诺收入，不改变客观完成状态。"
+                    "不做技术扫盲，不讲解实现原理，把泛聊拉回目标推进，不改变客观完成状态。"
                     "追问链上下文记录了从主对话派生出的追问层级，越靠后的层级越接近用户当前疑问，回答以前面的结论为基础，不要重复已讲过的内容。"
                 ),
             },

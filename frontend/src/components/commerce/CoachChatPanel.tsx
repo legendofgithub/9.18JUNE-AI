@@ -128,7 +128,7 @@ export default function CoachChatPanel({ language }: { language: SiteLanguage })
     <div className="coach-chat-panel">
       <header className="coach-chat-head">
         <div>
-          <h2>{currentRun?.title || (language === 'zh' ? '商业 MVP 跟练' : 'Business MVP')}</h2>
+          <h2>{currentRun?.title || (language === 'zh' ? '跟练对话' : 'Coaching chat')}</h2>
           <p>
             {currentStep
               ? `第 ${currentStep.order}/${currentRun?.steps.length} 节点 · ${currentStep.title}`
@@ -146,7 +146,7 @@ export default function CoachChatPanel({ language }: { language: SiteLanguage })
       <div ref={messagesRef} className="coach-chat-messages">
         {messages.length === 0 ? (
           <p className="coach-chat-empty">
-            {language === 'zh' ? '训练官已就位，先说说你想服务谁。' : 'Tell the coach who you want to serve.'}
+            {language === 'zh' ? 'AI 伴学助手已就位，先说说你想做什么。' : 'Your AI companion is ready. Tell it what you want to work on.'}
           </p>
         ) : messages.map(message => (
           <div key={message.id} className={`coach-chat-row is-${message.role}`}>
@@ -185,7 +185,7 @@ export default function CoachChatPanel({ language }: { language: SiteLanguage })
           rows={3}
           value={input}
           disabled={isStreaming || archived}
-          placeholder={language === 'zh' ? '回答训练官，推进当前节点…' : 'Reply to the coach…'}
+          placeholder={language === 'zh' ? '回复 AI 伴学助手，推进当前节点…' : 'Reply to your AI companion…'}
           onChange={event => setInput(event.target.value)}
           onKeyDown={event => {
             if (event.key === 'Enter' && !event.altKey) {

@@ -158,7 +158,7 @@ export default function ModelServicesPanel() {
       <header className="model-services-header">
         <div>
           <h2>连接你的 AI 助手</h2>
-          <p>选择一家服务商并填入密钥，超级个体训练师就能开始工作。{services.length} 个服务 · {totalModels} 个模型</p>
+          <p>选择一家服务商并填入密钥，AI 伴学助手就能开始对话。{services.length} 个服务 · {totalModels} 个模型</p>
         </div>
         <button type="button" className="studio-secondary-button" onClick={() => setNewDraft(emptyDraft())}>
           <Plus size={14} /> 连接新助手

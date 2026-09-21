@@ -20,16 +20,16 @@ from ..models.database import (
 
 
 MVP_STEPS = [
-    ("buyer_pain", "选择愿意付费的人群和痛点", "明确一类具体人群、一个急迫痛点和一个你能触达的渠道。", "付费人群与痛点画布"),
-    ("sellable_result", "定义一个最小可售卖结果", "把产品压缩成客户能验收、你能交付、愿意付费的一件小事。", "可售卖结果与验收标准"),
-    ("vibe_brief", "写出 Vibe Coding 商业需求简报", "用自然语言说明给谁解决什么问题、用户看到什么、下一步做什么。", "Vibe Coding 商业需求简报"),
-    ("product_shape", "选择最小产品形态", "在单页工具、表单服务、模板或流程产品中选一个最小形态。", "最小产品形态选择说明"),
-    ("first_build", "用自然语言让 AI 生成第一版 MVP", "把商业目标转成清晰指令，让 AI 产出可试用的第一版。", "第一版 MVP 指令与试用说明"),
-    ("five_minute_iteration", "用 5 分钟迭代法改到可试用", "每轮只改一个影响试用和购买的问题，直到客户能完整走通。", "5 分钟迭代记录"),
-    ("price_payment", "制作报价、收款方式和交付说明", "确定价格、收款方式、交付范围和客户确认标准。", "报价与收款说明"),
-    ("growth_assets", "准备获客素材和首批 20 个潜在客户", "准备获客内容、产品介绍和首批潜在客户名单。", "获客素材与潜在客户名单"),
-    ("first_sale_delivery", "发起首次销售并完成一次最小交付", "记录真实销售沟通，并完成一次最小交付和客户验收。", "首次销售与交付记录"),
-    ("retrospective", "复盘转化、交付和下一轮迭代", "整理转化、交付、收款和改进点，决定下一轮最小实验。", "变现复盘报告"),
+    ("buyer_pain", "明确想解决的问题和目标", "想清楚要解决什么问题、为谁解决、做到什么程度算达成。", "问题与目标画布"),
+    ("sellable_result", "定义一个最小可完成成果", "把目标压缩成一件能做出、能展示、能检验的小成果。", "最小成果与验收标准"),
+    ("vibe_brief", "写出成果需求简报", "用自然语言说明做给谁用、解决什么问题、做出来是什么样子、怎么算完成。", "成果需求简报"),
+    ("product_shape", "选择最简成果形态", "在单页工具、表单、模板或清单中选一个最容易上手的形态。", "最简成果形态选择说明"),
+    ("first_build", "用自然语言让 AI 做出第一版成果", "把想做成的东西转成清晰描述，让 AI 产出可以试用的第一版。", "第一版成果与试用记录"),
+    ("five_minute_iteration", "用 5 分钟迭代法改到好用", "每轮只改一个影响使用的问题，直到自己能完整走通。", "5 分钟迭代记录"),
+    ("price_payment", "整理方法、练习和使用说明", "把成果的使用方法、练习步骤和注意事项整理成说明，方便反复使用。", "方法与练习说明"),
+    ("growth_assets", "准备分享材料和首批试用伙伴", "准备一份成果介绍，并列出第一批愿意试用的伙伴。", "分享材料与试用名单"),
+    ("first_sale_delivery", "完成第一次完整使用并收集反馈", "记录真实的完整使用过程，完成一次最小交付并收集使用反馈。", "首次完整使用与反馈记录"),
+    ("retrospective", "复盘学习收获和下一步", "整理有效方法、遗留问题和改进点，决定下一步的练习方向。", "学习复盘报告"),
 ]
 
 class CommerceRepository:
@@ -152,10 +152,10 @@ class CommerceRepository:
         run = MvpRunModel(
             owner_id=owner_id,
             installed_skill_id=skill.id,
-            title=title.strip() or "未命名商业 MVP",
+            title=title.strip() or "未命名学习路径",
             vertical=vertical.strip(),
-            blocker="尚未完成商业项目问卷",
-            next_action="回答训练官的商业目标问题",
+            blocker="尚未明确学习目标",
+            next_action="告诉伴学助手你想学什么",
         )
         self.db.add(run)
         self.db.flush()
@@ -184,7 +184,7 @@ class CommerceRepository:
     def get_run(self, owner_id: str, run_id: str) -> MvpRunModel:
         run = self.db.get(MvpRunModel, run_id)
         if run is None or run.owner_id != owner_id:
-            raise NotFoundException("MVP 路径不存在")
+            raise NotFoundException("学习路径不存在")
         return run
 
     def get_run_by_session(self, session_id: str) -> Optional[MvpRunModel]:

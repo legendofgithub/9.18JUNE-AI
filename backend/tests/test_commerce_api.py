@@ -1,4 +1,4 @@
-"""Vibe Coding 变现训练官商业链路 API 合同测试。"""
+"""AI 伴学助手学习链路 API 合同测试。"""
 
 import asyncio
 import json
@@ -46,7 +46,7 @@ class FakeLLM:
             "model": model,
             "base_url": base_url,
         })
-        yield "先完成付费人群筛选，并把结果整理成可售卖的商业目标。"
+        yield "先明确想解决的问题，并把目标整理成可检验的小成果。"
         yield "<tracking>{\"blocker\":\"人群还不够窄\",\"next_action\":\"先列出10个具体客户\",\"vertical\":\"本地实体商家\",\"artifacts\":[]}</tracking>"
 
 
@@ -235,20 +235,22 @@ def test_install_autorun_and_reuses_skill(tmp_path):
         run = detail.json()["data"]
         assert len(run["steps"]) == 10
         assert [step["title"] for step in run["steps"]] == [
-            "选择愿意付费的人群和痛点",
-            "定义一个最小可售卖结果",
-            "写出 Vibe Coding 商业需求简报",
-            "选择最小产品形态",
-            "用自然语言让 AI 生成第一版 MVP",
-            "用 5 分钟迭代法改到可试用",
-            "制作报价、收款方式和交付说明",
-            "准备获客素材和首批 20 个潜在客户",
-            "发起首次销售并完成一次最小交付",
-            "复盘转化、交付和下一轮迭代",
+            "明确想解决的问题和目标",
+            "定义一个最小可完成成果",
+            "写出成果需求简报",
+            "选择最简成果形态",
+            "用自然语言让 AI 做出第一版成果",
+            "用 5 分钟迭代法改到好用",
+            "整理方法、练习和使用说明",
+            "准备分享材料和首批试用伙伴",
+            "完成第一次完整使用并收集反馈",
+            "复盘学习收获和下一步",
         ]
         assert run["messages"][0]["role"] == "assistant"
-        assert "5 个问题" in run["messages"][0]["content"]
-        assert "怎么收款" in run["messages"][0]["content"]
+        assert "伴学助手" in run["messages"][0]["content"]
+        assert "追问" in run["messages"][0]["content"]
+        assert "5 个问题" not in run["messages"][0]["content"]
+        assert "怎么收款" not in run["messages"][0]["content"]
 
         report = client.get(
             f"/api/mvp-runs/{run['id']}/report",

@@ -44,7 +44,6 @@ test('open product lands directly on studio, ready for unlimited follow-ups', as
   await page.goto('/#/studio');
 
   // 无登录门禁：直接显示免费启动面板
-  await expect(page.getByRole('heading', { name: '超级个体训练师' })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText('已解锁')).toBeVisible();
-  await expect(page.getByRole('button', { name: '启动超级个体训练师' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'AI 伴学助手' })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole('button', { name: '连接并开始对话' })).toBeVisible();
 });
